@@ -1,0 +1,67 @@
+name: Build
+
+on:
+  push:
+    branches: [ staging ]
+  pull_request:
+    branches: [ staging ]
+  workflow_dispatch:
+
+jobs:
+  run-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-20.04, macos-12]
+        arch: [x86, x64]
+        exclude:
+          - os: macos-12
+            arch: x86
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9.x'
+
+      - if: startsWith(matrix.os, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+          toolset: 19
+          vsversion: 2022
+      - if: startsWith(matrix.os, 'windows')
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install meson ninja
+
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: egor-tensin/setup-gcc@v1
+        with:
+          version: 11
+          platform: ${{ matrix.arch }}
+      - if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo python3 -m pip install --upgrade pip setuptools wheel
+          sudo python3 -m pip install meson ninja
+
+      - if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install meson ninja
+
+      - run: meson setup build --buildtype debugoptimized
+      - run: meson compile -C build rye
+      # - run: run tests
+
+  push-staging:
+    needs: run-tests
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Push staging branch to trunk
+        if: github.event_name == 'push'
+        run: git switch trunk && git merge --ff-only staging && git push origin trunk

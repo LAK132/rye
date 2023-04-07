@@ -1,0 +1,147 @@
+# testing options
+
+option('lak_enable_tests',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+# windowing options
+
+option('lak_enable_windowing',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+option('sdl2_from_source',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+option('lak_backend',
+	type: 'combo',
+	choices: [
+		'win32',
+		'xlib',
+		'xcb',
+		'sdl',
+		'qt',
+	],
+	value: 'sdl',
+	yield: true,
+)
+
+# llvm options
+
+option('lak_enable_llvm',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
+option('llvm_from_source',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+option('llvm_components',
+	type: 'array',
+	value: [
+		'Native',
+	],
+	yield: true,
+)
+
+option('llvm_install_components',
+	type: 'array',
+	value: [
+		'Core',
+		'ExecutionEngine',
+		'OrcJIT',
+		'Support',
+	],
+	yield: true,
+)
+
+option('llvm_parallel_link_jobs',
+	type: 'string',
+	value: '4',
+	yield: true,
+)
+
+# lmdb options
+
+option('lak_enable_lmdb',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
+# lua options
+
+option('lak_enable_lua',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+# glm options
+
+option('lak_enable_glm',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+# dear imgui options
+
+option('lak_enable_imgui',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+# libfive options
+
+option('lak_enable_libfive',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
+# libgphoto2 options
+
+option('lak_enable_libgphoto2',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
+option('libgphoto2_msys_prefix',
+	type: 'string',
+	value: 'C:/msys64',
+	yield: true,
+)
+
+# stb options
+
+option('lak_enable_stb',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+option('lak_enable_stb_image',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
+option('lak_enable_stb_image_write',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)

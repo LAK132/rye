@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag: ${{ steps.get_tag.outputs.TAG }}
+    runs-on: windows-2022
+    steps:
+      - run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
+        shell: bash
+        id: get_tag
+      - uses: softprops/action-gh-release@v1
+        id: create_release
+        with:
+          draft: false
+          prerelease: true
+          release_name: rye ${{ github.ref }}
+          tag_name: ${{ github.ref }}
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022]
+        arch: [x86, x64]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9.x'
+
+      - if: startsWith(matrix.os, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+          toolset: 19
+          vsversion: 2022
+      - if: startsWith(matrix.os, 'windows')
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install meson ninja
+
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: egor-tensin/setup-gcc@v1
+        with:
+          version: 11
+          platform: ${{ matrix.arch }}
+      - if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo python3 -m pip install --upgrade pip setuptools wheel
+          sudo python3 -m pip install meson ninja
+
+      - if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install meson ninja
+
+      - run: meson setup build --buildtype debugoptimized
+      - run: meson compile -C build rye
+
+      - if: startsWith(matrix.os, 'windows')
+        run: |
+          Compress-Archive -Path build\rye.exe, build\rye.pdb -DestinationPath rye-${{ runner.os }}-${{ matrix.arch }}.zip
+      # - if: startsWith(matrix.os, 'ubuntu')
+      #   run: make .deb and .zip
+      # - if: startsWith(matrix.os, 'macos')
+      #   run: make .dmg and .zip
+      - uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: rye-${{ runner.os }}-${{ matrix.arch }}.zip
+          asset_name: rye-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+          asset_content_type: application/zip
