@@ -14,3 +14,4 @@ lmdb*.wrap
 lua*.wrap
 SDL2*.wrap
 stb*.wrap
+*-wrap.wrap
