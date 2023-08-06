@@ -27,6 +27,10 @@ lak::optional<int> basic_window_preinit(int argc, char **argv)
 
 			return lak::optional<int>(0);
 		}
+		else if (v == "--nogl"_view)
+		{
+			basic_window_force_software = true;
+		}
 		else if (v == "--listtests"_view)
 		{
 			lak::debugger.std_out(lak::u8string(),
