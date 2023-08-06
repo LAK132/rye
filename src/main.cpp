@@ -1,11 +1,14 @@
 #include "rye_git.hpp"
 #define APP_VERSION GIT_TAG "-" GIT_HASH
 #define APP_NAME    "rye " STRINGIFY(LAK_ARCH) " " APP_VERSION
+#define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
 
 #include <lak/basic_program.inl>
 #include <lak/string_literals.hpp>
 #include <lak/string_view.hpp>
 #include <lak/test.hpp>
+
+#include <lak/imgui/widgets.hpp>
 
 lak::optional<int> basic_window_preinit(int argc, char **argv)
 {
@@ -64,7 +67,7 @@ lak::optional<int> basic_window_preinit(int argc, char **argv)
 
 void basic_window_init(lak::window &window)
 {
-	(void)window;
+	lak::ConfigureFileDialog(window.graphics());
 }
 
 void basic_window_handle_event(lak::window &window, lak::event &event)
