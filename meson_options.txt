@@ -33,42 +33,27 @@ option('lak_backend',
 	yield: true,
 )
 
-# llvm options
-
-option('lak_enable_llvm',
-	type: 'boolean',
-	value: false,
-	yield: true,
-)
-
-option('llvm_from_source',
+option('lak_enable_softrender',
 	type: 'boolean',
 	value: true,
 	yield: true,
 )
 
-option('llvm_components',
-	type: 'array',
-	value: [
-		'Native',
-	],
+option('lak_enable_opengl',
+	type: 'boolean',
+	value: true,
 	yield: true,
 )
 
-option('llvm_install_components',
-	type: 'array',
-	value: [
-		'Core',
-		'ExecutionEngine',
-		'OrcJIT',
-		'Support',
-	],
+option('lak_enable_vulkan',
+	type: 'boolean',
+	value: false,
 	yield: true,
 )
 
-option('llvm_parallel_link_jobs',
-	type: 'string',
-	value: '4',
+option('lak_enable_metal',
+	type: 'boolean',
+	value: false,
 	yield: true,
 )
 
@@ -101,14 +86,6 @@ option('lak_enable_glm',
 option('lak_enable_imgui',
 	type: 'boolean',
 	value: true,
-	yield: true,
-)
-
-# libfive options
-
-option('lak_enable_libfive',
-	type: 'boolean',
-	value: false,
 	yield: true,
 )
 
