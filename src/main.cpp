@@ -27,7 +27,7 @@ lak::optional<int> basic_window_preinit(int argc, char **argv)
 
 			return lak::optional<int>(0);
 		}
-		else if (argv[arg] == lak::astring("--listtests"))
+		else if (v == "--listtests"_view)
 		{
 			lak::debugger.std_out(lak::u8string(),
 			                      lak::u8string(u8"Available tests:\n"));
@@ -38,17 +38,15 @@ lak::optional<int> basic_window_preinit(int argc, char **argv)
 			}
 			return lak::optional<int>(0);
 		}
-		else if (argv[arg] == lak::astring("--laktestall"))
+		else if (v == "--laktestall"_view)
 		{
 			return lak::optional<int>(lak::run_tests());
 		}
-		else if (argv[arg] == lak::astring("--laktests") ||
-		         argv[arg] == lak::astring("--laktest"))
+		else if (v == "--laktests"_view || v == "--laktest"_view)
 		{
 			++arg;
 			if (arg >= argc) FATAL("Missing tests");
-			return lak::optional<int>(lak::run_tests(
-			  lak::as_u8string(lak::astring_view::from_c_str(argv[arg]))));
+			return lak::optional<int>(lak::run_tests(lak::as_u8string(v)));
 		}
 	}
 
