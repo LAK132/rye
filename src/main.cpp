@@ -203,7 +203,7 @@ void process_image(int black_level,
 
 				  lak::vec3f_t ir_wb =
 				    wb({wb_wv(850E-9), wb_wv(600E-9), wb_wv(525E-9)});
-				  lak::vec3f_t vis_wb =
+				  [[maybe_unused]] lak::vec3f_t vis_wb =
 				    wb({wb_wv(600E-9), wb_wv(525E-9), wb_wv(460E-9)});
 				  lak::vec3f_t aero_wb = wb(aero_match);
 
