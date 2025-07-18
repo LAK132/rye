@@ -29,10 +29,10 @@ lak::optional<lak::future<void>> binary_load, image_process;
 lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
-rye_texture lrawtex, lrdebayertex, lrsrgbtex;
+rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex;
 
 lak::optional<LibRaw> lraw;
-lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg;
+lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg;
 
 std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
 {
@@ -144,6 +144,20 @@ void process_image(int black_level,
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
 		white_level = lraw->imgdata.color.maximum;
 
+	auto wb_wv = [&colour_temp](double wavelength) -> float
+	{
+		const static double blackbody_max =
+		  lak::blackbody_peak_radiance(colour_temp);
+		return float(lak::blackbody_radiance(wavelength, colour_temp) /
+		             blackbody_max);
+	};
+
+	auto wb = [](lak::vec3f_t point) -> lak::vec3f_t
+	{
+		float max = rye_vec_max(point);
+		return {max / point.r, max / point.g, max / point.b};
+	};
+
 	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
 
 	lak::tasks tasks{lak::tasks::hardware_max()};
@@ -197,24 +211,19 @@ void process_image(int black_level,
 					  const size_t xtrans_off1    = xtrans_even_cell ? 0U : 1U;
 					  const size_t xtrans_off2    = xtrans_even_cell ? 1U : 0U;
 
-					  const float xtrans_r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
-					                          lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
-					                         2.f;
+					  lrdimg[{x, y}].r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
+					                      lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
+					                     2.f;
 
-					  const float xtrans_g =
+					  lrdimg[{x, y}].g =
 					    (lrawimg[{x3, y3}].g + lrawimg[{x3 + 1U, y3}].g +
 					     lrawimg[{x3, y3 + 1U}].g + lrawimg[{x3 + 1U, y3 + 1U}].g +
 					     lrawimg[{x3 + 2U, y3 + 2U}].g) /
 					    5.f;
 
-					  const float xtrans_b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
-					                          lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
-					                         2.f;
-
-					  const float ir   = xtrans_b;
-					  lrdimg[{x, y}].r = ir;
-					  lrdimg[{x, y}].g = xtrans_r - (ir_in_red * ir);
-					  lrdimg[{x, y}].b = xtrans_g - (ir_in_green * ir);
+					  lrdimg[{x, y}].b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
+					                      lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
+					                     2.f;
 				  }
 			  });
 		}
@@ -233,17 +242,69 @@ void process_image(int black_level,
 				  {
 					  const size_t x2 = x * 2;
 
-					  const float ir   = lrawimg[{x2 + 1U, y2 + 1U}].b;
-					  lrdimg[{x, y}].r = ir;
-					  lrdimg[{x, y}].g = lrawimg[{x2, y2}].r - (ir_in_red * ir);
-					  lrdimg[{x, y}].b = lrawimg[{x2 + 1U, y2}].g - (ir_in_green * ir);
+					  lrdimg[{x, y}].r = lrawimg[{x2, y2}].r;
+					  lrdimg[{x, y}].g = lrawimg[{x2 + 1U, y2}].g;
+					  lrdimg[{x, y}].b = lrawimg[{x2 + 1U, y2 + 1U}].b;
 				  }
 			  });
 		}
 	}
 	tasks.await();
 
-	// perform IR processing
+	// generate waveform
+	lrwaveimg.resize({lrdimg.size().x, 1000U});
+	lrwaveimg.fill({0.f, 0.f, 0.f});
+	const float waveform_step = 100.f / float(lrdimg.size().y);
+	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
+			  {
+				  auto clamp = [](float v) -> size_t
+				  {
+					  v = std::log10((v * 90.f) + 10.f) - 1.f;
+					  if (v <= 0.f)
+						  return 0U;
+					  else if (v >= 1.f)
+						  return 999U;
+
+					  size_t res = static_cast<size_t>(v * 1000.f);
+					  if (res >= 1000U)
+						  return 999U;
+					  else
+						  return res;
+				  };
+				  lak::vec3f_t irgb = lrdimg[{x, y}];
+				  irgb.g += irgb.b - (ir_in_green * irgb.b);
+				  irgb.r += irgb.b - (ir_in_red * irgb.b);
+				  lrwaveimg[{x, 999U - clamp(irgb.r)}].r += waveform_step;
+				  lrwaveimg[{x, 999U - clamp(irgb.g)}].g += waveform_step;
+				  lrwaveimg[{x, 999U - clamp(irgb.b)}].b += waveform_step;
+			  }
+		  });
+	}
+	tasks.await();
+
+	// IR processing stage 1
+	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrdimg.size().x; ++x)
+			  {
+				  const float ir   = lrdimg[{x, y}].b;
+				  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_in_green * ir);
+				  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_in_red * ir);
+				  lrdimg[{x, y}].r = ir;
+			  }
+		  });
+	}
+	tasks.await();
+
+	// IR processing stage 2
 	for (size_t y = 0; y < lrdimg.size().y; ++y)
 	{
 		tasks.push(
@@ -256,27 +317,26 @@ void process_image(int black_level,
 				  const float min = rye_vec_min<float>(irrgb);
 				  if (min < 0.0f) irrgb -= {min, min, min};
 
-				  auto wb_wv = [&](double wavelength) -> float
-				  {
-					  const static double blackbody_max =
-					    lak::blackbody_peak_radiance(colour_temp);
-					  return float(lak::blackbody_radiance(wavelength, colour_temp) /
-					               blackbody_max);
-				  };
-
-				  auto wb = [&](lak::vec3f_t point) -> lak::vec3f_t
-				  {
-					  float max = rye_vec_max(point);
-					  return {max / point.r, max / point.g, max / point.b};
-				  };
-
 				  lak::vec3f_t ir_wb =
 				    wb({wb_wv(850E-9), wb_wv(600E-9), wb_wv(525E-9)});
 				  [[maybe_unused]] lak::vec3f_t vis_wb =
 				    wb({wb_wv(600E-9), wb_wv(525E-9), wb_wv(460E-9)});
-				  lak::vec3f_t aero_wb = wb(aero_match);
 
-				  irrgb *= aero_wb * ir_wb;
+				  irrgb *= ir_wb;
+			  }
+		  });
+	}
+	tasks.await();
+
+	// IR processing stage 3
+	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrdimg.size().x; ++x)
+			  {
+				  lrdimg[{x, y}] *= wb(aero_match);
 			  }
 		  });
 	}
@@ -472,6 +532,7 @@ struct main_window : lak::basic_window<main_window>
 				lrawtex      = rye_create_texture(lrawimg, graphics_mode());
 				lrdebayertex = rye_create_texture(lrdimg, graphics_mode());
 				lrsrgbtex    = rye_create_texture(lrsrgbimg, graphics_mode());
+				lrwavetex    = rye_create_texture(lrwaveimg, graphics_mode());
 			}
 
 			if (raw_update && !image_process)
@@ -495,8 +556,8 @@ struct main_window : lak::basic_window<main_window>
 
 				ImGui::BeginChild(
 				  "ImgLeft", {left_size, -1}, true, ImGuiWindowFlags_NoSavedSettings);
-				ImGui::Text("Make %s", lraw->imgdata.idata.make);
-				ImGui::Text("Model %s", lraw->imgdata.idata.model);
+				ImGui::Text("Make: %s", lraw->imgdata.idata.make);
+				ImGui::Text("Model: %s", lraw->imgdata.idata.model);
 				ImGui::Text("ISO %.0f 1/%.0fs f/%.0f %.0fmm",
 				            lraw->imgdata.other.iso_speed,
 				            1.0f / lraw->imgdata.other.shutter,
@@ -511,10 +572,10 @@ struct main_window : lak::basic_window<main_window>
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("IR in Red", &ir_in_red, 0.1f, 10.0f);
+				ImGui::SliderFloat("IR in Red", &ir_in_red, 0.1f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("IR in Green", &ir_in_green, 0.1f, 10.0f);
+				ImGui::SliderFloat("IR in Green", &ir_in_green, 0.1f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
@@ -550,6 +611,11 @@ struct main_window : lak::basic_window<main_window>
 				{
 					static float lraw_size = 0.5f;
 					rye_image_view(lrawtex, &lraw_size);
+				}
+				LAK_TREE_NODE("WAVEFORM")
+				{
+					static float lraw_size = 1.0f;
+					rye_image_view(lrwavetex, &lraw_size);
 				}
 				LAK_TREE_NODE("DEBAYER")
 				{
@@ -705,4 +771,5 @@ void basic_window_quit(lak::window &)
 	lrawtex      = lak::monostate{};
 	lrdebayertex = lak::monostate{};
 	lrsrgbtex    = lak::monostate{};
+	lrwavetex    = lak::monostate{};
 }
