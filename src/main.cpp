@@ -29,10 +29,10 @@ lak::optional<lak::future<void>> binary_load, image_process;
 lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
-rye_texture lrawtex, lrdebayertex;
+rye_texture lrawtex, lrdebayertex, lrsrgbtex;
 
 lak::optional<LibRaw> lraw;
-lak::image<lak::vec3f_t> lrawimg, lrdimg;
+lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg;
 
 std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
 {
@@ -276,8 +276,21 @@ void process_image(int black_level,
 				    wb({wb_wv(600E-9), wb_wv(525E-9), wb_wv(460E-9)});
 				  lak::vec3f_t aero_wb = wb(aero_match);
 
-				  lrdimg[{x, y}] = rye_to_srgb(irrgb * aero_wb * ir_wb);
+				  irrgb *= aero_wb * ir_wb;
 			  }
+		  });
+	}
+	tasks.await();
+
+	// convert to sRGB
+	lrsrgbimg.resize(lrdimg.size());
+	for (size_t y = 0; y < lrsrgbimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
+				  lrsrgbimg[{x, y}] = rye_to_srgb(lrdimg[{x, y}]);
 		  });
 	}
 }
@@ -304,11 +317,48 @@ struct main_window : lak::basic_window<main_window>
 
 	static void open_file(const lak::fs::path &path) { load_binary_async(path); }
 
-	static void save_file(const lak::fs::path &path)
+	static void save_png_file(const lak::fs::path &path,
+	                          const lak::image<lak::vec3f_t> &img)
 	{
-		LAK_UNUSED(path);
-		// :TODO: DNG output
+		lak::image3_t processedimg;
+		processedimg.resize(img.size());
+
+		{
+			lak::tasks tasks{lak::tasks::hardware_max()};
+			for (size_t y = 0; y < img.size().y; ++y)
+			{
+				tasks.push(
+				  [&, y = y]()
+				  {
+					  for (size_t x = 0; x < img.size().x; ++x)
+					  {
+						  auto clamp = [](float f) -> uint8_t
+						  {
+							  if (f >= 1.f)
+								  return 255;
+							  else if (f <= 0.f)
+								  return 0;
+							  else
+								  return static_cast<uint8_t>(f * 255.f);
+						  };
+						  processedimg[{x, y}].r = clamp(img[{x, y}].r);
+						  processedimg[{x, y}].g = clamp(img[{x, y}].g);
+						  processedimg[{x, y}].b = clamp(img[{x, y}].b);
+					  }
+				  });
+			}
+		}
+
+		stbi_write_png(
+		  (const char *)path.u8string().c_str(),
+		  int(processedimg.size().x),
+		  int(processedimg.size().y),
+		  3,
+		  processedimg.data(),
+		  int(processedimg.contig_size_bytes() / processedimg.size().y));
 	}
+
+	static void save_dng_file(const lak::fs::path &) { ASSERT_NYI(); }
 
 	static const lak::fs::path &file_path() { return binary_path; }
 
@@ -320,9 +370,12 @@ struct main_window : lak::basic_window<main_window>
 
 	static void file_menu()
 	{
-		static lak::path_getter open_pgetter, save_pgetter;
+		static lak::path_getter open_pgetter, save_png_pgetter, save_dng_pgetter;
+		static bool save_srgb_png = false;
 		if (auto res = open_pgetter(); res) open_file(*res);
-		if (auto res = save_pgetter(); res) save_file(*res);
+		if (auto res = save_png_pgetter(); res)
+			save_png_file(*res, save_srgb_png ? lrsrgbimg : lrdimg);
+		if (auto res = save_dng_pgetter(); res) save_dng_file(*res);
 
 		if (ImGui::BeginMenu("File"))
 		{
@@ -330,11 +383,34 @@ struct main_window : lak::basic_window<main_window>
 				open_pgetter.open_file(file_path(),
 				                       "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2},.*");
 
+			if (ImGui::MenuItem(
+			      "Save PNG...", nullptr, false, lrdimg.contig_size() != 0U))
+			{
+				save_srgb_png = false;
+				save_png_pgetter.save_file(
+				  file_path().parent_path() /
+				    (file_path().stem().u8string() + u8".PNG"),
+				  "Image Files{.PNG}");
+			}
+
+			if (ImGui::MenuItem("Save PNG (sRGB)...",
+			                    nullptr,
+			                    false,
+			                    lrsrgbimg.contig_size() != 0U))
+			{
+				save_srgb_png = true;
+				save_png_pgetter.save_file(
+				  file_path().parent_path() /
+				    (file_path().stem().u8string() + u8".PNG"),
+				  "Image Files{.PNG}");
+			}
+
 			// if (ImGui::MenuItem(
-			//       "Save...", nullptr, false, processedimg.contig_size() != 0U))
-			// 	save_pgetter.save_file(file_path().parent_path() /
-			// 	                         (file_path().stem().u8string() + u8".DNG"),
-			// 	                       "Image Files{.DNG},.*");
+			//       "Save DNG...", nullptr, false, lrdimg.contig_size() != 0U))
+			// 	save_dng_pgetter.save_file(
+			// 	  file_path().parent_path() /
+			// 	    (file_path().stem().u8string() + u8".DNG"),
+			// 	  "Image Files{.DNG}");
 
 			ImGui::EndMenu();
 		}
@@ -395,6 +471,7 @@ struct main_window : lak::basic_window<main_window>
 				image_process.reset();
 				lrawtex      = rye_create_texture(lrawimg, graphics_mode());
 				lrdebayertex = rye_create_texture(lrdimg, graphics_mode());
+				lrsrgbtex    = rye_create_texture(lrsrgbimg, graphics_mode());
 			}
 
 			if (raw_update && !image_process)
@@ -474,10 +551,15 @@ struct main_window : lak::basic_window<main_window>
 					static float lraw_size = 0.5f;
 					rye_image_view(lrawtex, &lraw_size);
 				}
-				// LAK_TREE_NODE("DEBAYER")
+				LAK_TREE_NODE("DEBAYER")
 				{
 					static float lraw_size = 1.0f;
 					rye_image_view(lrdebayertex, &lraw_size);
+				}
+				// LAK_TREE_NODE("sRGB")
+				{
+					static float lraw_size = 1.0f;
+					rye_image_view(lrsrgbtex, &lraw_size);
 				}
 				ImGui::EndChild();
 			}
