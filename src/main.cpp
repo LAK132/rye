@@ -704,4 +704,5 @@ void basic_window_quit(lak::window &)
 	lraw.reset();
 	lrawtex      = lak::monostate{};
 	lrdebayertex = lak::monostate{};
+	lrsrgbtex    = lak::monostate{};
 }
