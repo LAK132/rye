@@ -12,17 +12,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, ubuntu-20.04, macos-12]
+        os: [windows-2022, ubuntu-24.04, macos-13]
         arch: [x86, x64]
         exclude:
-          - os: macos-12
+          - os: macos-13
             arch: x86
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.9.x'
 
@@ -44,14 +44,17 @@ jobs:
           platform: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
-          sudo python3 -m pip install --upgrade pip setuptools wheel
+          sudo python3 -m pip install --upgrade setuptools
           sudo python3 -m pip install meson ninja
 
       - if: startsWith(matrix.os, 'macos')
         run: |
           brew install meson ninja
+          echo "CC=$(brew --prefix llvm@15)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@15)/bin/clang++" >> $GITHUB_ENV
 
-      - run: meson setup build --buildtype debugoptimized
+        # _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR is a hack fix for https://github.com/actions/runner-images/issues/10004
+      - run: meson setup build -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" --buildtype debugoptimized
       - run: meson compile -C build rye
       # - run: run tests
 
@@ -59,7 +62,7 @@ jobs:
     needs: run-tests
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Push staging branch to trunk
