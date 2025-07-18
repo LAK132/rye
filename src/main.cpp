@@ -138,10 +138,10 @@ void process_image(int black_level,
                    lak::vec3f_t aero_match)
 {
 	if (black_level < 0) black_level = 0;
-	if (unsigned int(black_level) > lraw->imgdata.color.maximum)
+	if (static_cast<unsigned int>(black_level) > lraw->imgdata.color.maximum)
 		black_level = lraw->imgdata.color.maximum;
 	if (white_level < 0) white_level = 0;
-	if (unsigned int(white_level) > lraw->imgdata.color.maximum)
+	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
 		white_level = lraw->imgdata.color.maximum;
 
 	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
@@ -428,7 +428,7 @@ lak::optional<int> basic_program_preinit(lak::span<char *> args)
 
 	lak::debugger.std_out(u8"", u8"" APP_NAME "\n");
 
-	for (int arg = 0U; arg < args.size(); ++arg)
+	for (size_t arg = 0U; arg < args.size(); ++arg)
 	{
 		if (args[arg] == lak::astring("-h") || args[arg] == lak::astring("--help"))
 		{
