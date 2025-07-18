@@ -145,10 +145,10 @@ void process_image(int black_level,
 		white_level = lraw->imgdata.color.maximum;
 
 	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
-	lrdimg.resize(
-	  {lraw->imgdata.sizes.iwidth / 2U, lraw->imgdata.sizes.iheight / 2U});
 
 	lak::tasks tasks{lak::tasks::hardware_max()};
+
+	// convert raw to float and apply black/white levels
 	for (size_t y = 0; y < lrawimg.size().y; ++y)
 	{
 		tasks.push(
@@ -169,20 +169,89 @@ void process_image(int black_level,
 	}
 	tasks.await();
 
+	bool is_foveon = lraw->imgdata.idata.is_foveon;
+	bool is_xtrans = lraw->imgdata.idata.filters == 9U;
+
+	// downscale debayer
+	if (is_foveon)
+	{
+		// lrdimg.resize({lraw->imgdata.sizes.iwidth,
+		// lraw->imgdata.sizes.iheight});
+		ASSERT_NYI();
+	}
+	else if (is_xtrans)
+	{
+		lrdimg.resize(
+		  {lraw->imgdata.sizes.iwidth / 3U, lraw->imgdata.sizes.iheight / 3U});
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  const size_t y3 = y * 3;
+				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  {
+					  const size_t x3 = x * 3;
+
+					  const bool xtrans_even_cell = (x + y) % 2U == 0U;
+					  const size_t xtrans_off1    = xtrans_even_cell ? 0U : 1U;
+					  const size_t xtrans_off2    = xtrans_even_cell ? 1U : 0U;
+
+					  const float xtrans_r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
+					                          lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
+					                         2.f;
+
+					  const float xtrans_g =
+					    (lrawimg[{x3, y3}].g + lrawimg[{x3 + 1U, y3}].g +
+					     lrawimg[{x3, y3 + 1U}].g + lrawimg[{x3 + 1U, y3 + 1U}].g +
+					     lrawimg[{x3 + 2U, y3 + 2U}].g) /
+					    5.f;
+
+					  const float xtrans_b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
+					                          lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
+					                         2.f;
+
+					  const float ir   = xtrans_b;
+					  lrdimg[{x, y}].r = ir;
+					  lrdimg[{x, y}].g = xtrans_r - (ir_in_red * ir);
+					  lrdimg[{x, y}].b = xtrans_g - (ir_in_green * ir);
+				  }
+			  });
+		}
+	}
+	else
+	{
+		lrdimg.resize(
+		  {lraw->imgdata.sizes.iwidth / 2U, lraw->imgdata.sizes.iheight / 2U});
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  const size_t y2 = y * 2;
+				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  {
+					  const size_t x2 = x * 2;
+
+					  const float ir   = lrawimg[{x2 + 1U, y2 + 1U}].b;
+					  lrdimg[{x, y}].r = ir;
+					  lrdimg[{x, y}].g = lrawimg[{x2, y2}].r - (ir_in_red * ir);
+					  lrdimg[{x, y}].b = lrawimg[{x2 + 1U, y2}].g - (ir_in_green * ir);
+				  }
+			  });
+		}
+	}
+	tasks.await();
+
+	// perform IR processing
 	for (size_t y = 0; y < lrdimg.size().y; ++y)
 	{
 		tasks.push(
 		  [&, y = y]()
 		  {
-			  const size_t y2 = y * 2;
 			  for (size_t x = 0; x < lrdimg.size().x; ++x)
 			  {
-				  const size_t x2 = x * 2;
-
-				  const float ir    = lrawimg[{x2 + 1U, y2 + 1U}].b;
-				  const float red   = lrawimg[{x2, y2}].r - (ir_in_red * ir);
-				  const float green = lrawimg[{x2 + 1U, y2}].g - (ir_in_green * ir);
-				  lak::vec3f_t irrgb{ir, red, green};
+				  lak::vec3f_t &irrgb = lrdimg[{x, y}];
 
 				  const float min = rye_vec_min<float>(irrgb);
 				  if (min < 0.0f) irrgb -= {min, min, min};
