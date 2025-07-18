@@ -3,6 +3,8 @@ packagecache/**
 SDL2/**
 glm/**
 imgui/**
+lak/**
+libraw/**
 lmdb/**
 lua*/**
 stb/**

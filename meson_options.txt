@@ -14,6 +14,12 @@ option('lak_enable_windowing',
 	yield: true,
 )
 
+option('lak_run_windowing_tests',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
 option('sdl2_from_source',
 	type: 'boolean',
 	value: true,
@@ -57,6 +63,14 @@ option('lak_enable_metal',
 	yield: true,
 )
 
+# llvm options
+
+option('lak_enable_llvm',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
 # lmdb options
 
 option('lak_enable_lmdb',
@@ -89,6 +103,14 @@ option('lak_enable_imgui',
 	yield: true,
 )
 
+# libfive options
+
+option('lak_enable_libfive',
+	type: 'boolean',
+	value: false,
+	yield: true,
+)
+
 # libgphoto2 options
 
 option('lak_enable_libgphoto2',
@@ -100,6 +122,14 @@ option('lak_enable_libgphoto2',
 option('libgphoto2_msys_prefix',
 	type: 'string',
 	value: 'C:/msys64',
+	yield: true,
+)
+
+# libraw options
+
+option('libraw_static_library',
+	type: 'boolean',
+	value: true,
 	yield: true,
 )
 

@@ -7,8 +7,11 @@ project(
 )
 
 lak_subprj = subproject('lak')
+imgui_subprj = subproject('imgui')
+libraw_subprj = subproject('libraw')
 
 c_cpp_args = lak_subprj.get_variable('c_cpp_args')
+c_cpp_args += subproject('libraw-wrap').get_variable('c_cpp_args')
 cpp_args = lak_subprj.get_variable('cpp_args')
 c_args = lak_subprj.get_variable('c_args')
 version = lak_subprj.get_variable('version')
