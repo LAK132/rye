@@ -124,7 +124,7 @@ rye_texture rye_create_texture(const lak::image<float> &bitmap,
 
 void rye_image_view(const rye_texture &texture, float *scale)
 {
-	ImGui::DragFloat("Scale", scale, 0.1f, 0.1f, 10.0f);
+	ImGui::DragFloat("Scale", scale, 0.01f, 0.1f, 10.0f);
 	ImGui::Separator();
 	rye_image_view(texture, *scale);
 }
@@ -253,22 +253,22 @@ lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
 	exposure += 1.f;
 	lightness /= 10.f;
 	lightness += 1.f;
-	contrast /= 1000.f;
+	contrast /= 10.f;
 	contrast += 1.f;
-	saturation /= 100.f;
+	saturation /= 10.f;
 	saturation += 1.f;
 
 	auto [H, S, L] = rye_rgb_to_hsl(colour);
 
-	S *= saturation;
-
 	L *= exposure;
 
-	L -= .5f;
-	L *= contrast;
-	L += .5f;
+	L = lak::sigmoid(-10.f / lightness, L);
 
-	L *= lightness;
+	L = (lak::sigmoid(-10.f / contrast, (L * 2.f) - 1.f) + 1.f) / 2.f;
+
+	L = std::min(L, 1.f);
+
+	S *= saturation;
 
 	return rye_hsl_to_rgb({H, S, L});
 }
