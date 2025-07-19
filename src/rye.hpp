@@ -32,6 +32,22 @@ T rye_vec_min(lak::vec3<T> vec)
 	return std::min<T>(std::min<T>(vec.r, vec.g), vec.b);
 }
 
+lak::vec3f_t rye_clip_max_rgb(lak::vec3f_t rgb);
+
+lak::vec3f_t rye_clip_min_rgb(lak::vec3f_t rgb);
+
+lak::vec3f_t rye_clamp_rgb(lak::vec3f_t rgb);
+
+lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb);
+
+lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl);
+
+lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
+                                float exposure,
+                                float lightness,
+                                float contrast,
+                                float saturation);
+
 float rye_to_srgb(float value);
 
 lak::vec3f_t rye_to_srgb(lak::vec3f_t colour);

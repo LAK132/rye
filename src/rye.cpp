@@ -177,6 +177,102 @@ void rye_image_view(const rye_texture &texture, const float scale)
 	ImGui::EndChild();
 }
 
+lak::vec3f_t rye_clip_max_rgb(lak::vec3f_t rgb)
+{
+	return {std::min(rgb.r, 1.f), std::min(rgb.g, 1.f), std::min(rgb.b, 1.f)};
+}
+
+lak::vec3f_t rye_clip_min_rgb(lak::vec3f_t rgb)
+{
+	return {std::max(rgb.r, 0.f), std::max(rgb.g, 0.f), std::max(rgb.b, 0.f)};
+}
+
+lak::vec3f_t rye_clamp_rgb(lak::vec3f_t rgb)
+{
+	const float max = rye_vec_max(rgb);
+	if (max > 1.f) rgb /= max;
+	return rye_clip_min_rgb(rgb);
+}
+
+// https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
+lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb)
+{
+	rgb              = rye_clamp_rgb(rgb);
+	const float max  = rye_vec_max(rgb);
+	const float min  = rye_vec_min(rgb);
+	const float diff = max - min;
+	const float L    = (min + max) / 2.f;
+	const float S    = min == max ? 0.f
+	                   : L < 0.5f ? diff / (max + min)
+	                              : diff / (2.f - max - min);
+	const float H    = S == 0.f
+	                     ? 0.f
+	                     : (max == rgb.r   ? (rgb.g - rgb.b) / diff
+	                        : max == rgb.g ? 2.f + ((rgb.b - rgb.r) / diff)
+	                                       : 4.f + ((rgb.r - rgb.g) / diff)) /
+                        6.f;
+	return {lak::fpmod(H, 1.f), S, L};
+}
+
+lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl)
+{
+	const float H = lak::fpmod(hsl.r, 1.f);
+	const float S = hsl.g;
+	const float L = hsl.b;
+	if (S == 0.f) return {L, L, L};
+
+	const float t1 = L < 0.5f ? L * (1.f + S) : (L + S) - (L * S);
+	const float t2 = (2.f * L) - t1;
+	const float tr = H + (1.f / 3.f);
+	const float tg = H;
+	const float tb = H + (2.f / 3.f);
+
+	auto transform = [&](float v) -> float
+	{
+		if (v > 1.f) v -= 1.f;
+		if (v * 6 < 1.f)
+			return t2 + (t1 - t2) * 6.f * v;
+		else if (v * 2.f < 1.f)
+			return t1;
+		else if (v * 3.f < 2.f)
+			return t2 + (t1 - t2) * ((2.f / 3.f) - v) * 6;
+		else
+			return t2;
+	};
+
+	return {transform(tr), transform(tg), transform(tb)};
+}
+
+lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
+                                float exposure,
+                                float lightness,
+                                float contrast,
+                                float saturation)
+{
+	exposure /= 10.f;
+	exposure += 1.f;
+	lightness /= 10.f;
+	lightness += 1.f;
+	contrast /= 1000.f;
+	contrast += 1.f;
+	saturation /= 100.f;
+	saturation += 1.f;
+
+	auto [H, S, L] = rye_rgb_to_hsl(colour);
+
+	S *= saturation;
+
+	L *= exposure;
+
+	L -= .5f;
+	L *= contrast;
+	L += .5f;
+
+	L *= lightness;
+
+	return rye_hsl_to_rgb({H, S, L});
+}
+
 float rye_to_srgb(float value)
 {
 	if (value <= 0.0031308f)

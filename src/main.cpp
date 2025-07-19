@@ -96,7 +96,11 @@ void process_image(int white_level,
                    float ir_in_red,
                    float ir_in_green,
                    float colour_temp,
-                   lak::vec3f_t aero_match)
+                   lak::vec3f_t aero_match,
+                   float exposure,
+                   float lightness,
+                   float contrast,
+                   float saturation)
 {
 	if (white_level < 0) white_level = 0;
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
@@ -317,7 +321,8 @@ void process_image(int white_level,
 		  [&, y = y]()
 		  {
 			  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
-				  lrsrgbimg[{x, y}] = rye_to_srgb(lrdimg[{x, y}]);
+				  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
+				    lrdimg[{x, y}], exposure, lightness, contrast, saturation));
 		  });
 	}
 }
@@ -326,14 +331,22 @@ void process_image_async(int white_level,
                          float ir_in_red,
                          float ir_in_green,
                          float colour_temp,
-                         lak::vec3f_t aero_match)
+                         lak::vec3f_t aero_match,
+                         float exposure,
+                         float lightness,
+                         float contrast,
+                         float saturation)
 {
 	image_process = lak::async(process_image,
 	                           white_level,
 	                           ir_in_red,
 	                           ir_in_green,
 	                           colour_temp,
-	                           aero_match);
+	                           aero_match,
+	                           exposure,
+	                           lightness,
+	                           contrast,
+	                           saturation);
 }
 
 struct main_window : lak::basic_window<main_window>
@@ -499,6 +512,7 @@ struct main_window : lak::basic_window<main_window>
 			static float lraw_contrast = 1.0f;
 			static float colour_temp   = 5500;
 			static lak::vec3f_t aero_match{.35f, 1.4f, .7f};
+			static float exposure   = 0.f;
 			static float lightness  = 0.f;
 			static float contrast   = 0.f;
 			static float saturation = 0.f;
@@ -519,14 +533,18 @@ struct main_window : lak::basic_window<main_window>
 				                    ir_balance.ir_in_red,
 				                    ir_balance.ir_in_green,
 				                    colour_temp,
-				                    aero_match);
+				                    aero_match,
+				                    exposure,
+				                    lightness,
+				                    contrast,
+				                    saturation);
 			}
 
 			{
 				const auto content_size{ImGui::GetContentRegionAvail()};
 
-				static float left_size  = content_size.x / 2;
-				static float right_size = content_size.x / 2;
+				static float left_size  = std::min<float>(content_size.x / 2, 500.f);
+				static float right_size = content_size.x - left_size;
 
 				lak::VertSplitter(left_size, right_size, content_size.x);
 
@@ -565,19 +583,22 @@ struct main_window : lak::basic_window<main_window>
 				ImGui::SliderFloat("Temperature", &colour_temp, 2000.f, 10000.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat3("Match", &aero_match.r, 0.0f, 2.0f);
+				ImGui::SliderFloat3("RGB Sensitivity", &aero_match.r, 0.0f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
 
-				// ImGui::SliderFloat("Lightness", &lightness, -100.f, 100.f);
-				// if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				ImGui::SliderFloat("Exposure", &exposure, -100.f, 100.f);
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				// ImGui::SliderFloat("Contrast", &contrast, -100.f, 100.f);
-				// if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				ImGui::SliderFloat("Contrast", &contrast, -100.f, 100.f);
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				// ImGui::SliderFloat("Saturation", &saturation, -100.f, 100.f);
-				// if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				ImGui::SliderFloat("Lightness", &lightness, -100.f, 100.f);
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				ImGui::SliderFloat("Saturation", &saturation, -100.f, 100.f);
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				if (image_process) ImGui::Text("Processing...");
 
