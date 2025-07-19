@@ -20,6 +20,8 @@
 #define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
 #include <lak/basic_single_window_program.inl>
 
+#include <unordered_map>
+
 int opengl_major, opengl_minor;
 lak::graphics_mode graphics_mode;
 bool force_only_error = false;
@@ -33,6 +35,21 @@ rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex;
 
 lak::optional<LibRaw> lraw;
 lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg;
+
+bool use_database_ir_balance = true;
+bool used_ir_balance_from_db = false;
+struct rye_ir_balance
+{
+	float ir_in_red   = 1.f;
+	float ir_in_green = 1.f;
+};
+
+std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
+  {"Canon EOS M50"_str, {.ir_in_red = 0.930f, .ir_in_green = 0.730f}},
+  {"Fujifilm X-T30"_str, {.ir_in_red = 1.018f, .ir_in_green = 0.978f}},
+  {"Nikon D5200"_str, {.ir_in_red = 1.036f, .ir_in_green = 0.690f}},
+  {"Sony ILCE-7RM2"_str, {.ir_in_red = 1.030f, .ir_in_green = 1.073f}},
+};
 
 std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
 {
@@ -414,11 +431,16 @@ struct main_window : lak::basic_window<main_window>
 		}
 	}
 
-	static void menu_bar(float) { file_menu(); }
+	static void menu_bar(float)
+	{
+		file_menu();
+		ImGui::Checkbox("Use database IR balance", &use_database_ir_balance);
+	}
 
 	static void main_region(float frame_time)
 	{
 		static int lraw_white_level = UINT16_MAX;
+		static rye_ir_balance ir_balance;
 
 		if (binary_load)
 		{
@@ -440,6 +462,18 @@ struct main_window : lak::basic_window<main_window>
 				binary_update = true;
 				raw_update    = true;
 				time_acc      = 0.0f;
+
+				used_ir_balance_from_db = false;
+				if (use_database_ir_balance)
+				{
+					if (auto it = ir_balance_db.find(lraw->imgdata.idata.make + " "_str +
+					                                 lraw->imgdata.idata.model);
+					    it != ir_balance_db.end())
+					{
+						ir_balance              = it->second;
+						used_ir_balance_from_db = true;
+					}
+				}
 			}
 			ImGui::EndChild();
 		}
@@ -454,8 +488,6 @@ struct main_window : lak::basic_window<main_window>
 		{
 			static float lraw_contrast = 1.0f;
 			static float colour_temp   = 5500;
-			static float ir_in_red     = 1.0f;
-			static float ir_in_green   = 1.0f;
 			static lak::vec3f_t aero_match{.35f, 1.4f, .7f};
 			static float lightness  = 0.f;
 			static float contrast   = 0.f;
@@ -473,8 +505,11 @@ struct main_window : lak::basic_window<main_window>
 			if (raw_update && !image_process)
 			{
 				raw_update = false;
-				process_image_async(
-				  lraw_white_level, ir_in_red, ir_in_green, colour_temp, aero_match);
+				process_image_async(lraw_white_level,
+				                    ir_balance.ir_in_red,
+				                    ir_balance.ir_in_green,
+				                    colour_temp,
+				                    aero_match);
 			}
 
 			{
@@ -487,22 +522,32 @@ struct main_window : lak::basic_window<main_window>
 
 				ImGui::BeginChild(
 				  "ImgLeft", {left_size, -1}, true, ImGuiWindowFlags_NoSavedSettings);
-				ImGui::Text("Make: %s", lraw->imgdata.idata.make);
-				ImGui::Text("Model: %s", lraw->imgdata.idata.model);
+				ImGui::Text("Make: '%s'", lraw->imgdata.idata.make);
+				ImGui::Text("Model: '%s'", lraw->imgdata.idata.model);
 				ImGui::Text("ISO %.0f 1/%.0fs f/%.0f %.0fmm",
 				            lraw->imgdata.other.iso_speed,
 				            1.0f / lraw->imgdata.other.shutter,
 				            lraw->imgdata.other.aperture,
 				            lraw->imgdata.other.focal_len);
 
+				if (use_database_ir_balance && used_ir_balance_from_db)
+				{
+					ImGui::Text("IR in Red: %.3f", ir_balance.ir_in_red);
+					ImGui::Text("IR in Green: %.3f", ir_balance.ir_in_green);
+				}
+				else
+				{
+					ImGui::DragFloat(
+					  "IR in Red", &ir_balance.ir_in_red, 0.0001f, 0.1f, 2.0f);
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "IR in Green", &ir_balance.ir_in_green, 0.0001f, 0.1f, 2.0f);
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				}
+
 				ImGui::SliderInt(
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
-				ImGui::DragFloat("IR in Red", &ir_in_red, 0.0001f, 0.1f, 2.0f);
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
-				ImGui::DragFloat("IR in Green", &ir_in_green, 0.0001f, 0.1f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
