@@ -51,31 +51,31 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
    {
      .ir_in_red   = 0.930f,
      .ir_in_green = 0.730f,
-     .aero_match  = {.64f, 1.8f, .7f},
+     .aero_match  = {.35f, 1.0f, .395f},
    }},
   {"Canon EOS M6 Mark II"_str,
    {
      .ir_in_red   = 1.07f,
      .ir_in_green = 0.9f,
-     .aero_match  = {.42f, 1.8f, .59f},
+     .aero_match  = {.42f, 1.0f, .57f},
    }},
   {"Fujifilm X-T30"_str,
    {
      .ir_in_red   = 1.018f,
      .ir_in_green = 0.978f,
-     .aero_match  = {.6f, 1.8f, .7f},
+     .aero_match  = {.63f, 1.0f, .46f},
    }},
   {"Nikon D5200"_str,
    {
      .ir_in_red   = 1.036f,
      .ir_in_green = 0.690f,
-     .aero_match  = {.1f, 2.f, .7f},
+     .aero_match  = {.2f, .55f, 1.f},
    }},
   {"Sony ILCE-7RM2"_str,
    {
      .ir_in_red   = 1.030f,
      .ir_in_green = 1.073f,
-     .aero_match  = {.35f, 1.4f, .7f},
+     .aero_match  = {.5f, 1.0f, .85f},
    }},
 };
 
@@ -332,26 +332,16 @@ void process_image(int white_level,
 				  const float min = rye_vec_min<float>(irrgb);
 				  if (min < 0.0f) irrgb -= {min, min, min};
 
-				  lak::vec3f_t ir_wb =
-				    wb({wb_wv(850E-9), wb_wv(600E-9), wb_wv(525E-9)});
-				  [[maybe_unused]] lak::vec3f_t vis_wb =
-				    wb({wb_wv(600E-9), wb_wv(525E-9), wb_wv(460E-9)});
+				  lak::vec3f_t aerochrome_sensitivity{
+				    std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
 
-				  irrgb *= ir_wb;
-			  }
-		  });
-	}
-	tasks.await();
-
-	// IR processing stage 3
-	for (size_t y = 0; y < lrdimg.size().y; ++y)
-	{
-		tasks.push(
-		  [&, y = y]()
-		  {
-			  for (size_t x = 0; x < lrdimg.size().x; ++x)
-			  {
-				  lrdimg[{x, y}] *= wb(aero_match);
+				  // camera sensitivity compensation
+				  irrgb *=
+				    wb({1.f / aero_match.b, 1.f / aero_match.r, 1.f / aero_match.g});
+				  // aerochrome sensitivity factor
+				  irrgb *= wb(aerochrome_sensitivity);
+				  // blackbody whitebalance
+				  irrgb *= wb({wb_wv(850E-9), wb_wv(600E-9), wb_wv(525E-9)});
 			  }
 		  });
 	}
