@@ -189,6 +189,13 @@ void process_image(int white_level,
 	{
 		lrdimg.resize(
 		  {lraw->imgdata.sizes.iwidth / 2U, lraw->imgdata.sizes.iheight / 2U});
+
+		lak::vec2s_t channels[4U] = {{0U, 0U}, {0U, 0U}, {0U, 0U}, {0U, 0U}};
+		for (int r = 0U; r < 2U; ++r)
+			for (int c = 0U; c < 2U; ++c)
+				if (int col = lraw->COLOR(r, c); col <= 3U)
+					channels[col] = {size_t(r), size_t(c)};
+
 		for (size_t y = 0; y < lrdimg.size().y; ++y)
 		{
 			tasks.push(
@@ -198,10 +205,13 @@ void process_image(int white_level,
 				  for (size_t x = 0; x < lrdimg.size().x; ++x)
 				  {
 					  const size_t x2 = x * 2;
+					  const lak::vec2s_t xy{x, y};
+					  const lak::vec2s_t xy2{x2, y2};
 
-					  lrdimg[{x, y}].r = lrawimg[{x2, y2}].r;
-					  lrdimg[{x, y}].g = lrawimg[{x2 + 1U, y2}].g;
-					  lrdimg[{x, y}].b = lrawimg[{x2 + 1U, y2 + 1U}].b;
+					  lrdimg[xy].r = lrawimg[xy2 + channels[0U]].r;
+					  lrdimg[xy].g = std::max(lrawimg[xy2 + channels[1U]].g,
+					                          lrawimg[xy2 + channels[3U]].g);
+					  lrdimg[xy].b = lrawimg[xy2 + channels[2U]].b;
 				  }
 			  });
 		}
