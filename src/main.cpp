@@ -53,6 +53,12 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
      .ir_in_green = 0.730f,
      .aero_match  = {.64f, 1.8f, .7f},
    }},
+  {"Canon EOS M6 Mark II"_str,
+   {
+     .ir_in_red   = 1.07f,
+     .ir_in_green = 0.9f,
+     .aero_match  = {.42f, 1.8f, .59f},
+   }},
   {"Fujifilm X-T30"_str,
    {
      .ir_in_red   = 1.018f,
