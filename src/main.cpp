@@ -36,64 +36,7 @@ lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg;
 
 std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
 {
-	switch (err)
-	{
-		case LIBRAW_SUCCESS:
-			strm << "LIBRAW_SUCCESS";
-			break;
-		case LIBRAW_UNSPECIFIED_ERROR:
-			strm << "LIBRAW_UNSPECIFIED_ERROR";
-			break;
-		case LIBRAW_FILE_UNSUPPORTED:
-			strm << "LIBRAW_FILE_UNSUPPORTED";
-			break;
-		case LIBRAW_REQUEST_FOR_NONEXISTENT_IMAGE:
-			strm << "LIBRAW_REQUEST_FOR_NONEXISTENT_IMAGE";
-			break;
-		case LIBRAW_OUT_OF_ORDER_CALL:
-			strm << "LIBRAW_OUT_OF_ORDER_CALL";
-			break;
-		case LIBRAW_NO_THUMBNAIL:
-			strm << "LIBRAW_NO_THUMBNAIL";
-			break;
-		case LIBRAW_UNSUPPORTED_THUMBNAIL:
-			strm << "LIBRAW_UNSUPPORTED_THUMBNAIL";
-			break;
-		case LIBRAW_INPUT_CLOSED:
-			strm << "LIBRAW_INPUT_CLOSED";
-			break;
-		case LIBRAW_NOT_IMPLEMENTED:
-			strm << "LIBRAW_NOT_IMPLEMENTED";
-			break;
-		case LIBRAW_REQUEST_FOR_NONEXISTENT_THUMBNAIL:
-			strm << "LIBRAW_REQUEST_FOR_NONEXISTENT_THUMBNAIL";
-			break;
-		case LIBRAW_UNSUFFICIENT_MEMORY:
-			strm << "LIBRAW_UNSUFFICIENT_MEMORY";
-			break;
-		case LIBRAW_DATA_ERROR:
-			strm << "LIBRAW_DATA_ERROR";
-			break;
-		case LIBRAW_IO_ERROR:
-			strm << "LIBRAW_IO_ERROR";
-			break;
-		case LIBRAW_CANCELLED_BY_CALLBACK:
-			strm << "LIBRAW_CANCELLED_BY_CALLBACK";
-			break;
-		case LIBRAW_BAD_CROP:
-			strm << "LIBRAW_BAD_CROP";
-			break;
-		case LIBRAW_TOO_BIG:
-			strm << "LIBRAW_TOO_BIG";
-			break;
-		case LIBRAW_MEMPOOL_OVERFLOW:
-			strm << "LIBRAW_MEMPOOL_OVERFLOW";
-			break;
-		default:
-			strm << "unknown libraw error";
-			break;
-	}
-	return strm;
+	return strm << libraw_strerror(err);
 }
 
 lak::error_code<LibRaw_errors> libraw_as_result(int code)
@@ -111,6 +54,8 @@ lak::error_codes<lak::errno_error, LibRaw_errors> load_binary_ex(
 	RES_TRY(libraw_as_result(lraw->open_buffer(binary.begin(), binary.size())));
 	RES_TRY(libraw_as_result(lraw->unpack()));
 	RES_TRY(libraw_as_result(lraw->raw2image()));
+	RES_TRY(libraw_as_result(lraw->subtract_black()));
+	RES_TRY(libraw_as_result(lraw->adjust_maximum()));
 	binary_path = lak::move(path);
 	return lak::ok_t{};
 }
@@ -130,16 +75,12 @@ void load_binary_async(const lak::fs::path &path)
 	binary_load = lak::async(load_binary, path);
 }
 
-void process_image(int black_level,
-                   int white_level,
+void process_image(int white_level,
                    float ir_in_red,
                    float ir_in_green,
                    float colour_temp,
                    lak::vec3f_t aero_match)
 {
-	if (black_level < 0) black_level = 0;
-	if (static_cast<unsigned int>(black_level) > lraw->imgdata.color.maximum)
-		black_level = lraw->imgdata.color.maximum;
 	if (white_level < 0) white_level = 0;
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
 		white_level = lraw->imgdata.color.maximum;
@@ -162,7 +103,7 @@ void process_image(int black_level,
 
 	lak::tasks tasks{lak::tasks::hardware_max()};
 
-	// convert raw to float and apply black/white levels
+	// convert raw to float and apply white level adjustment
 	for (size_t y = 0; y < lrawimg.size().y; ++y)
 	{
 		tasks.push(
@@ -172,12 +113,9 @@ void process_image(int black_level,
 			  {
 				  const size_t i = iy + x;
 
-				  lrawimg[i].r = (float(lraw->imgdata.image[i][0] - black_level) /
-				                  (white_level - black_level));
-				  lrawimg[i].g = (float(lraw->imgdata.image[i][1] - black_level) /
-				                  (white_level - black_level));
-				  lrawimg[i].b = (float(lraw->imgdata.image[i][2] - black_level) /
-				                  (white_level - black_level));
+				  lrawimg[i].r = float(lraw->imgdata.image[i][0]) / white_level;
+				  lrawimg[i].g = float(lraw->imgdata.image[i][1]) / white_level;
+				  lrawimg[i].b = float(lraw->imgdata.image[i][2]) / white_level;
 			  }
 		  });
 	}
@@ -189,9 +127,11 @@ void process_image(int black_level,
 	// downscale debayer
 	if (is_foveon)
 	{
-		// lrdimg.resize({lraw->imgdata.sizes.iwidth,
-		// lraw->imgdata.sizes.iheight});
 		ASSERT_NYI();
+
+#if 0
+		lrdimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
+#endif
 	}
 	else if (is_xtrans)
 	{
@@ -355,15 +295,13 @@ void process_image(int black_level,
 	}
 }
 
-void process_image_async(int black_level,
-                         int white_level,
+void process_image_async(int white_level,
                          float ir_in_red,
                          float ir_in_green,
                          float colour_temp,
                          lak::vec3f_t aero_match)
 {
 	image_process = lak::async(process_image,
-	                           black_level,
 	                           white_level,
 	                           ir_in_red,
 	                           ir_in_green,
@@ -480,7 +418,6 @@ struct main_window : lak::basic_window<main_window>
 
 	static void main_region(float frame_time)
 	{
-		static int lraw_black_level = 0;
 		static int lraw_white_level = UINT16_MAX;
 
 		if (binary_load)
@@ -503,8 +440,6 @@ struct main_window : lak::basic_window<main_window>
 				binary_update = true;
 				raw_update    = true;
 				time_acc      = 0.0f;
-
-				lraw_black_level = lraw->imgdata.color.black;
 			}
 			ImGui::EndChild();
 		}
@@ -538,12 +473,8 @@ struct main_window : lak::basic_window<main_window>
 			if (raw_update && !image_process)
 			{
 				raw_update = false;
-				process_image_async(lraw_black_level,
-				                    lraw_white_level,
-				                    ir_in_red,
-				                    ir_in_green,
-				                    colour_temp,
-				                    aero_match);
+				process_image_async(
+				  lraw_white_level, ir_in_red, ir_in_green, colour_temp, aero_match);
 			}
 
 			{
@@ -563,10 +494,6 @@ struct main_window : lak::basic_window<main_window>
 				            1.0f / lraw->imgdata.other.shutter,
 				            lraw->imgdata.other.aperture,
 				            lraw->imgdata.other.focal_len);
-
-				ImGui::SliderInt(
-				  "Black level", &lraw_black_level, 0, lraw->imgdata.color.maximum);
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::SliderInt(
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
