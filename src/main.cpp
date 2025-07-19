@@ -173,54 +173,75 @@ void process_image(int white_level,
 	bool is_foveon = lraw->imgdata.idata.is_foveon;
 	bool is_xtrans = lraw->imgdata.idata.filters == 9U;
 
+	const int flip = lraw->imgdata.sizes.flip;
+	auto flip4     = [flip](lak::vec2s_t index) -> lak::vec2s_t
+	{
+		if (flip & 4) index = {index.y, index.x};
+		return index;
+	};
+	auto flip12 = [flip](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
+	{
+		if (flip & 2) index.x = (size.x - 1U) - index.x;
+		if (flip & 1) index.y = (size.y - 1U) - index.y;
+		return index;
+	};
+	auto flip124 = [&](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
+	{ return flip12(flip4(index), size); };
+
+	lak::vec2s_t isize{lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight};
+
 	// downscale debayer
 	if (is_foveon)
 	{
 		ASSERT_NYI();
 
 #if 0
-		lrdimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
+		lrdimg.resize(flip4(isize));
 #endif
 	}
 	else if (is_xtrans)
 	{
-		lrdimg.resize(
-		  {lraw->imgdata.sizes.iwidth / 3U, lraw->imgdata.sizes.iheight / 3U});
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		isize.x /= 3U;
+		isize.y /= 3U;
+		lrdimg.resize(flip4(isize));
+
+		for (size_t y = 0; y < isize.y; ++y)
 		{
 			tasks.push(
 			  [&, y = y]()
 			  {
 				  const size_t y3 = y * 3;
-				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  for (size_t x = 0; x < isize.x; ++x)
 				  {
-					  const size_t x3 = x * 3;
+					  const size_t x3       = x * 3;
+					  const lak::vec2s_t xy = flip124({x, y}, lrdimg.size());
 
 					  const bool xtrans_even_cell = (x + y) % 2U == 0U;
 					  const size_t xtrans_off1    = xtrans_even_cell ? 0U : 1U;
 					  const size_t xtrans_off2    = xtrans_even_cell ? 1U : 0U;
 
-					  lrdimg[{x, y}].r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
-					                      lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
-					                     2.f;
+					  lrdimg[xy].r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
+					                  lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
+					                 2.f;
 
-					  lrdimg[{x, y}].g =
+					  lrdimg[xy].g =
 					    (lrawimg[{x3, y3}].g + lrawimg[{x3 + 1U, y3}].g +
 					     lrawimg[{x3, y3 + 1U}].g + lrawimg[{x3 + 1U, y3 + 1U}].g +
 					     lrawimg[{x3 + 2U, y3 + 2U}].g) /
 					    5.f;
 
-					  lrdimg[{x, y}].b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
-					                      lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
-					                     2.f;
+					  lrdimg[xy].b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
+					                  lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
+					                 2.f;
 				  }
 			  });
 		}
 	}
 	else
 	{
-		lrdimg.resize(
-		  {lraw->imgdata.sizes.iwidth / 2U, lraw->imgdata.sizes.iheight / 2U});
+		isize.x /= 2U;
+		isize.y /= 2U;
+		lrdimg.resize(flip4(isize));
 
 		lak::vec2s_t channels[4U] = {{0U, 0U}, {0U, 0U}, {0U, 0U}, {0U, 0U}};
 		for (int r = 0; r < 2; ++r)
@@ -228,16 +249,16 @@ void process_image(int white_level,
 				if (int col = lraw->COLOR(r, c); col <= 3)
 					channels[size_t(col)] = {size_t(r), size_t(c)};
 
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		for (size_t y = 0; y < isize.y; ++y)
 		{
 			tasks.push(
 			  [&, y = y]()
 			  {
 				  const size_t y2 = y * 2;
-				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  for (size_t x = 0; x < isize.x; ++x)
 				  {
-					  const size_t x2 = x * 2;
-					  const lak::vec2s_t xy{x, y};
+					  const size_t x2       = x * 2;
+					  const lak::vec2s_t xy = flip124({x, y}, lrdimg.size());
 					  const lak::vec2s_t xy2{x2, y2};
 
 					  lrdimg[xy].r = lrawimg[xy2 + channels[0U]].r;
