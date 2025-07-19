@@ -660,25 +660,30 @@ struct main_window : lak::basic_window<main_window>
 
 				ImGui::Separator();
 
-				ImGui::SliderFloat("Temperature", &colour_temp, 2000.f, 10000.f);
+				ImGui::DragFloat(
+				  "Temperature", &colour_temp, 10.f, 2000.f, 10000.f, "%.0fK");
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat3(
-				  "RGB Sensitivity", &ir_balance.aero_match.r, 0.0f, 2.0f, "1/%.3f");
+				ImGui::DragFloat3("RGB Sensitivity",
+				                  &ir_balance.aero_match.r,
+				                  0.001f,
+				                  0.0f,
+				                  2.0f,
+				                  "1/%.3f");
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
 
-				ImGui::SliderFloat("Exposure", &exposure, -100.f, 100.f);
+				ImGui::DragFloat("Exposure", &exposure, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("Contrast", &contrast, -100.f, 100.f);
+				ImGui::DragFloat("Contrast", &contrast, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("Lightness", &lightness, -100.f, 100.f);
+				ImGui::DragFloat("Lightness", &lightness, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("Saturation", &saturation, -100.f, 100.f);
+				ImGui::DragFloat("Saturation", &saturation, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				if (image_process) ImGui::Text("Processing...");
