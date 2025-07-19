@@ -134,13 +134,7 @@ void process_image(int white_level,
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
 		white_level = lraw->imgdata.color.maximum;
 
-	auto wb_wv = [&colour_temp](double wavelength) -> float
-	{
-		const static double blackbody_max =
-		  lak::blackbody_peak_radiance(colour_temp);
-		return float(lak::blackbody_radiance(wavelength, colour_temp) /
-		             blackbody_max);
-	};
+	auto wb_wv = rye_relative_blackbody(colour_temp);
 
 	auto wb = [](lak::vec3f_t point) -> lak::vec3f_t
 	{
