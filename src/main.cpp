@@ -37,18 +37,40 @@ lak::optional<LibRaw> lraw;
 lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg;
 
 bool use_database_ir_balance = true;
+bool use_database_aero_match = true;
 bool used_ir_balance_from_db = false;
 struct rye_ir_balance
 {
 	float ir_in_red   = 1.f;
 	float ir_in_green = 1.f;
+	lak::vec3f_t aero_match{.35f, 1.4f, .7f};
 };
 
 std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
-  {"Canon EOS M50"_str, {.ir_in_red = 0.930f, .ir_in_green = 0.730f}},
-  {"Fujifilm X-T30"_str, {.ir_in_red = 1.018f, .ir_in_green = 0.978f}},
-  {"Nikon D5200"_str, {.ir_in_red = 1.036f, .ir_in_green = 0.690f}},
-  {"Sony ILCE-7RM2"_str, {.ir_in_red = 1.030f, .ir_in_green = 1.073f}},
+  {"Canon EOS M50"_str,
+   {
+     .ir_in_red   = 0.930f,
+     .ir_in_green = 0.730f,
+     .aero_match  = {.64f, 1.8f, .7f},
+   }},
+  {"Fujifilm X-T30"_str,
+   {
+     .ir_in_red   = 1.018f,
+     .ir_in_green = 0.978f,
+     .aero_match  = {.6f, 1.8f, .7f},
+   }},
+  {"Nikon D5200"_str,
+   {
+     .ir_in_red   = 1.036f,
+     .ir_in_green = 0.690f,
+     .aero_match  = {.1f, 2.f, .7f},
+   }},
+  {"Sony ILCE-7RM2"_str,
+   {
+     .ir_in_red   = 1.030f,
+     .ir_in_green = 1.073f,
+     .aero_match  = {.35f, 1.4f, .7f},
+   }},
 };
 
 std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
@@ -421,8 +443,10 @@ struct main_window : lak::basic_window<main_window>
 				open_pgetter.open_file(file_path(),
 				                       "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2},.*");
 
-			if (ImGui::MenuItem(
-			      "Save PNG...", nullptr, false, lrdimg.contig_size() != 0U))
+			if (ImGui::MenuItem("Save PNG (for editing)...",
+			                    nullptr,
+			                    false,
+			                    lrdimg.contig_size() != 0U))
 			{
 				save_srgb_png = false;
 				save_png_pgetter.save_file(
@@ -431,7 +455,7 @@ struct main_window : lak::basic_window<main_window>
 				  "Image Files{.PNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (sRGB)...",
+			if (ImGui::MenuItem("Save PNG (sRGB final)...",
 			                    nullptr,
 			                    false,
 			                    lrsrgbimg.contig_size() != 0U))
@@ -458,6 +482,7 @@ struct main_window : lak::basic_window<main_window>
 	{
 		file_menu();
 		ImGui::Checkbox("Use database IR balance", &use_database_ir_balance);
+		ImGui::Checkbox("Use database RGB sensitivity", &use_database_aero_match);
 	}
 
 	static void main_region(float frame_time)
@@ -487,14 +512,22 @@ struct main_window : lak::basic_window<main_window>
 				time_acc      = 0.0f;
 
 				used_ir_balance_from_db = false;
-				if (use_database_ir_balance)
+				if (use_database_ir_balance || use_database_aero_match)
 				{
 					if (auto it = ir_balance_db.find(lraw->imgdata.idata.make + " "_str +
 					                                 lraw->imgdata.idata.model);
 					    it != ir_balance_db.end())
 					{
-						ir_balance              = it->second;
-						used_ir_balance_from_db = true;
+						if (use_database_ir_balance)
+						{
+							ir_balance.ir_in_red    = it->second.ir_in_red;
+							ir_balance.ir_in_green  = it->second.ir_in_green;
+							used_ir_balance_from_db = true;
+						}
+						if (use_database_aero_match)
+						{
+							ir_balance.aero_match = it->second.aero_match;
+						}
 					}
 				}
 			}
@@ -511,11 +544,10 @@ struct main_window : lak::basic_window<main_window>
 		{
 			static float lraw_contrast = 1.0f;
 			static float colour_temp   = 5500;
-			static lak::vec3f_t aero_match{.35f, 1.4f, .7f};
-			static float exposure   = 0.f;
-			static float lightness  = 0.f;
-			static float contrast   = 0.f;
-			static float saturation = 0.f;
+			static float exposure      = 0.f;
+			static float lightness     = 0.f;
+			static float contrast      = 0.f;
+			static float saturation    = 0.f;
 
 			if (image_process && image_process->has_value())
 			{
@@ -533,7 +565,7 @@ struct main_window : lak::basic_window<main_window>
 				                    ir_balance.ir_in_red,
 				                    ir_balance.ir_in_green,
 				                    colour_temp,
-				                    aero_match,
+				                    ir_balance.aero_match,
 				                    exposure,
 				                    lightness,
 				                    contrast,
@@ -583,7 +615,8 @@ struct main_window : lak::basic_window<main_window>
 				ImGui::SliderFloat("Temperature", &colour_temp, 2000.f, 10000.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat3("RGB Sensitivity", &aero_match.r, 0.0f, 2.0f);
+				ImGui::SliderFloat3(
+				  "RGB Sensitivity", &ir_balance.aero_match.r, 0.0f, 2.0f, "1/%.3f");
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
