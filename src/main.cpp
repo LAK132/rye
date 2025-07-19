@@ -499,10 +499,10 @@ struct main_window : lak::basic_window<main_window>
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("IR in Red", &ir_in_red, 0.1f, 2.0f);
+				ImGui::DragFloat("IR in Red", &ir_in_red, 0.0001f, 0.1f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::SliderFloat("IR in Green", &ir_in_green, 0.1f, 2.0f);
+				ImGui::DragFloat("IR in Green", &ir_in_green, 0.0001f, 0.1f, 2.0f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
