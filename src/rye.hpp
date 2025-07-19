@@ -52,7 +52,7 @@ float rye_to_srgb(float value);
 
 lak::vec3f_t rye_to_srgb(lak::vec3f_t colour);
 
-auto rye_relative_blackbody(float colour_temp)
+inline auto rye_relative_blackbody(float colour_temp)
 {
 	return
 	  [colour_temp, blackbody_max = lak::blackbody_peak_radiance(colour_temp)](
