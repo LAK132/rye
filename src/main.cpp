@@ -31,10 +31,10 @@ lak::optional<lak::future<void>> binary_load, image_process;
 lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
-rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex;
+rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex, lrwave2tex;
 
 lak::optional<LibRaw> lraw;
-lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg;
+lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg, lrwave2img;
 
 bool use_database_ir_balance = true;
 bool use_database_aero_match = true;
@@ -146,6 +146,21 @@ void process_image(int white_level,
 	{
 		float max = rye_vec_max(point);
 		return {max / point.r, max / point.g, max / point.b};
+	};
+
+	auto wave_clamp = [](float v) -> size_t
+	{
+		v = std::log10((v * 90.f) + 10.f) - 1.f;
+		if (v <= 0.f)
+			return 0U;
+		else if (v >= 1.f)
+			return 999U;
+
+		size_t res = static_cast<size_t>(v * 1000.f);
+		if (res >= 1000U)
+			return 999U;
+		else
+			return res;
 	};
 
 	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
@@ -271,7 +286,7 @@ void process_image(int white_level,
 	}
 	tasks.await();
 
-	// generate waveform
+	// generate ir balance waveform
 	lrwaveimg.resize({lrdimg.size().x, 1000U});
 	lrwaveimg.fill({0.f, 0.f, 0.f});
 	const float waveform_step = 100.f / float(lrdimg.size().y);
@@ -282,26 +297,12 @@ void process_image(int white_level,
 		  {
 			  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
 			  {
-				  auto clamp = [](float v) -> size_t
-				  {
-					  v = std::log10((v * 90.f) + 10.f) - 1.f;
-					  if (v <= 0.f)
-						  return 0U;
-					  else if (v >= 1.f)
-						  return 999U;
-
-					  size_t res = static_cast<size_t>(v * 1000.f);
-					  if (res >= 1000U)
-						  return 999U;
-					  else
-						  return res;
-				  };
 				  lak::vec3f_t irgb = lrdimg[{x, y}];
 				  irgb.g += irgb.b - (ir_in_green * irgb.b);
 				  irgb.r += irgb.b - (ir_in_red * irgb.b);
-				  lrwaveimg[{x, 999U - clamp(irgb.r)}].r += waveform_step;
-				  lrwaveimg[{x, 999U - clamp(irgb.g)}].g += waveform_step;
-				  lrwaveimg[{x, 999U - clamp(irgb.b)}].b += waveform_step;
+				  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
+				  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
+				  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
 			  }
 		  });
 	}
@@ -357,6 +358,25 @@ void process_image(int white_level,
 			  for (size_t x = 0; x < lrdimg.size().x; ++x)
 			  {
 				  lrdimg[{x, y}] *= wb(aero_match);
+			  }
+		  });
+	}
+	tasks.await();
+
+	// generate white balance waveform
+	lrwave2img.resize({lrdimg.size().x, 1000U});
+	lrwave2img.fill({0.f, 0.f, 0.f});
+	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrwave2img.size().x; ++x)
+			  {
+				  lak::vec3f_t irgb = lrdimg[{x, y}];
+				  lrwave2img[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
+				  lrwave2img[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
+				  lrwave2img[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
 			  }
 		  });
 	}
@@ -583,6 +603,7 @@ struct main_window : lak::basic_window<main_window>
 				lrdebayertex = rye_create_texture(lrdimg, graphics_mode());
 				lrsrgbtex    = rye_create_texture(lrsrgbimg, graphics_mode());
 				lrwavetex    = rye_create_texture(lrwaveimg, graphics_mode());
+				lrwave2tex   = rye_create_texture(lrwave2img, graphics_mode());
 			}
 
 			if (raw_update && !image_process)
@@ -675,10 +696,15 @@ struct main_window : lak::basic_window<main_window>
 					static float lraw_size = 0.5f;
 					rye_image_view(lrawtex, &lraw_size);
 				}
-				LAK_TREE_NODE("WAVEFORM")
+				LAK_TREE_NODE("IR BALANCE WAVEFORM")
 				{
 					static float lraw_size = 1.0f;
 					rye_image_view(lrwavetex, &lraw_size);
+				}
+				LAK_TREE_NODE("WHITE BALANCE WAVEFORM")
+				{
+					static float lraw_size = 1.0f;
+					rye_image_view(lrwave2tex, &lraw_size);
 				}
 				LAK_TREE_NODE("DEBAYER")
 				{
@@ -835,4 +861,5 @@ void basic_window_quit(lak::window &)
 	lrdebayertex = lak::monostate{};
 	lrsrgbtex    = lak::monostate{};
 	lrwavetex    = lak::monostate{};
+	lrwave2tex   = lak::monostate{};
 }
