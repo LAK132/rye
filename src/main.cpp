@@ -341,7 +341,7 @@ void process_image(int white_level,
 				  // aerochrome sensitivity factor
 				  irrgb *= wb(aerochrome_sensitivity);
 				  // blackbody whitebalance
-				  irrgb *= wb({wb_wv(850E-9), wb_wv(600E-9), wb_wv(525E-9)});
+				  irrgb *= wb({wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)});
 			  }
 		  });
 	}
