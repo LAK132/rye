@@ -177,6 +177,30 @@ void rye_image_view(const rye_texture &texture, const float scale)
 	ImGui::EndChild();
 }
 
+lak::vec3f_t rye_desqueeze_sample(const lak::image<lak::vec3f_t> &src,
+                                  lak::vec2s_t dst_size,
+                                  lak::vec2s_t dst_coord)
+{
+	return rye_desqueeze_sampler(src, dst_size)(dst_coord);
+}
+
+lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
+                                       float desqueeze)
+{
+	lak::image<lak::vec3f_t> result;
+
+	result.resize(
+	  {static_cast<size_t>(std::llround(double(img.size().x) * desqueeze)),
+	   img.size().y});
+
+	auto sampler = rye_desqueeze_sampler(img, result.size());
+
+	for (lak::vec2s_t xy = {0U, 0U}; xy.y < result.size().y; ++xy.y)
+		for (xy.x = 0U; xy.x < result.size().x; ++xy.x) result[xy] = sampler(xy);
+
+	return result;
+}
+
 lak::vec3f_t rye_clip_max_rgb(lak::vec3f_t rgb)
 {
 	return {std::min(rgb.r, 1.f), std::min(rgb.g, 1.f), std::min(rgb.b, 1.f)};

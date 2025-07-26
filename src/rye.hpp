@@ -20,6 +20,37 @@ void rye_image_view(const rye_texture &texture, float *scale);
 
 void rye_image_view(const rye_texture &texture, const float scale);
 
+inline auto rye_desqueeze_sampler(const lak::image<lak::vec3f_t> &src,
+                                  lak::vec2s_t dst_size)
+{
+	ASSERT_EQUAL(src.size().y, dst_size.y);
+	ASSERT_GREATER_OR_EQUAL(dst_size.x, src.size().x);
+
+	return
+	  [&src, dst_size, sample_rate = double(src.size().x) / double(dst_size.x)](
+	    lak::vec2s_t dst_coord)
+	{
+		double x = double(dst_coord.x) * sample_rate;
+		size_t y = dst_coord.y;
+
+		double x_min = std::floor(x);
+		double x_max = std::ceil(x);
+		size_t a     = static_cast<size_t>(std::llround(x_min));
+		size_t b     = static_cast<size_t>(std::llround(x_max));
+
+		if (a == b) return src[{a, y}];
+
+		return (src[{a, y}] * float(x_max - x)) + (src[{b, y}] * float(x - x_min));
+	};
+}
+
+lak::vec3f_t rye_desqueeze_sample(const lak::image<lak::vec3f_t> &src,
+                                  lak::vec2s_t dst_size,
+                                  lak::vec2s_t dst_coord);
+
+lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
+                                       float desqueeze);
+
 template<typename T>
 T rye_vec_max(lak::vec3<T> vec)
 {

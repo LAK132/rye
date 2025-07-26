@@ -117,6 +117,11 @@ void load_binary(const lak::fs::path &path)
 
 void load_binary_async(const lak::fs::path &path)
 {
+	lrawimg.resize({0, 0});
+	lrdimg.resize({0, 0});
+	lrsrgbimg.resize({0, 0});
+	lrwaveimg.resize({0, 0});
+	lrwave2img.resize({0, 0});
 	binary_load = lak::async(load_binary, path);
 }
 
@@ -128,7 +133,8 @@ void process_image(int white_level,
                    float exposure,
                    float lightness,
                    float contrast,
-                   float saturation)
+                   float saturation,
+                   lak::optional<float> desqueeze)
 {
 	if (white_level < 0) white_level = 0;
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
@@ -367,15 +373,30 @@ void process_image(int white_level,
 	tasks.await();
 
 	// convert to sRGB
-	lrsrgbimg.resize(lrdimg.size());
+	if_let_some (float stretch, desqueeze)
+		lrsrgbimg.resize(
+		  {static_cast<size_t>(static_cast<double>(lrdimg.size().x) * stretch),
+		   lrdimg.size().y});
+	else
+		lrsrgbimg.resize(lrdimg.size());
 	for (size_t y = 0; y < lrsrgbimg.size().y; ++y)
 	{
 		tasks.push(
 		  [&, y = y]()
 		  {
-			  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
-				  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
-				    lrdimg[{x, y}], exposure, lightness, contrast, saturation));
+			  if (desqueeze)
+			  {
+				  auto sampler = rye_desqueeze_sampler(lrdimg, lrsrgbimg.size());
+				  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
+					  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
+					    sampler({x, y}), exposure, lightness, contrast, saturation));
+			  }
+			  else
+			  {
+				  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
+					  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
+					    lrdimg[{x, y}], exposure, lightness, contrast, saturation));
+			  }
 		  });
 	}
 }
@@ -388,7 +409,8 @@ void process_image_async(int white_level,
                          float exposure,
                          float lightness,
                          float contrast,
-                         float saturation)
+                         float saturation,
+                         lak::optional<float> desqueeze)
 {
 	image_process = lak::async(process_image,
 	                           white_level,
@@ -399,7 +421,8 @@ void process_image_async(int white_level,
 	                           exposure,
 	                           lightness,
 	                           contrast,
-	                           saturation);
+	                           saturation,
+	                           desqueeze);
 }
 
 struct main_window : lak::basic_window<main_window>
@@ -631,12 +654,14 @@ struct main_window : lak::basic_window<main_window>
 		}
 		else
 		{
-			static float lraw_contrast = 1.0f;
+			static float lraw_contrast = 1.f;
 			static float colour_temp   = 5500;
 			static float exposure      = 0.f;
 			static float lightness     = 0.f;
 			static float contrast      = 0.f;
 			static float saturation    = 0.f;
+			static bool anamorphic     = false;
+			static float desqueeze     = 1.f;
 
 			if (image_process && image_process->has_value())
 			{
@@ -651,6 +676,7 @@ struct main_window : lak::basic_window<main_window>
 			if (raw_update && !image_process)
 			{
 				raw_update = false;
+				desqueeze  = std::max(.5f, std::min(10.f, desqueeze));
 				process_image_async(lraw_white_level,
 				                    ir_balance.ir_in_red,
 				                    ir_balance.ir_in_green,
@@ -659,7 +685,9 @@ struct main_window : lak::basic_window<main_window>
 				                    exposure,
 				                    lightness,
 				                    contrast,
-				                    saturation);
+				                    saturation,
+				                    anamorphic ? lak::make_optional(desqueeze)
+				                               : lak::nullopt);
 			}
 
 			{
@@ -727,6 +755,13 @@ struct main_window : lak::basic_window<main_window>
 
 				ImGui::DragFloat("Saturation", &saturation, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				ImGui::DragFloat(
+				  "##DesqueezeInput", &desqueeze, 0.1f, 1.f, 3.f, "%.1fx");
+				if (anamorphic && ImGui::IsItemDeactivatedAfterEdit())
+					raw_update = true;
+				ImGui::SameLine();
+				if (ImGui::Checkbox("Desqueeze", &anamorphic)) raw_update = true;
 
 				if (image_process) ImGui::Text("Processing...");
 
