@@ -509,9 +509,67 @@ struct main_window : lak::basic_window<main_window>
 		}
 	}
 
-	static void menu_bar(float)
+	static void credits()
+	{
+		LAK_TREE_NODE("Credits")
+		{
+			LAK_TREE_NODE("ImGui")
+			{
+				ImGui::Text("https://github.com/ocornut/imgui");
+			}
+			LAK_TREE_NODE("gl3w") { ImGui::Text("https://github.com/skaslev/gl3w"); }
+#ifdef LAK_USE_SDL
+			LAK_TREE_NODE("SDL2") { ImGui::Text("https://www.libsdl.org/"); }
+#endif
+			LAK_TREE_NODE("tinflate")
+			{
+				ImGui::Text("http://achurch.org/tinflate.c");
+				ImGui::Text("Fork: https://github.com/LAK132/tinflate");
+			}
+			LAK_TREE_NODE("LibRaw")
+			{
+				ImGui::Text("https://github.com/LibRaw/LibRaw");
+			}
+			LAK_TREE_NODE("stb_image_write")
+			{
+				ImGui::Text(
+				  "https://github.com/nothings/stb/blob/master/stb_image_write.h");
+			}
+			LAK_TREE_NODE("glm") { ImGui::Text("https://github.com/g-truc/glm"); }
+			LAK_TREE_NODE("lak") { ImGui::Text("https://github.com/LAK132/lak"); }
+		}
+	}
+
+	static void about_menu(float frame_time)
+	{
+		if (ImGui::BeginMenu("About"))
+		{
+			ImGui::Text(APP_NAME " by LAK132");
+			switch (::graphics_mode)
+			{
+				case lak::graphics_mode::OpenGL:
+					ImGui::Text("Using OpenGL %d.%d", opengl_major, opengl_minor);
+					break;
+
+				case lak::graphics_mode::Software:
+					ImGui::Text("Using Softraster");
+					break;
+
+				default:
+					break;
+			}
+			ImGui::Text("Frame rate %f", std::round(1.0f / frame_time));
+			ImGui::Text("Perf Freq  0x%016" PRIX64, lak::performance_frequency());
+			ImGui::Text("Perf Count 0x%016" PRIX64, lak::performance_counter());
+			credits();
+			ImGui::EndMenu();
+		}
+	}
+
+	static void menu_bar(float frame_time)
 	{
 		file_menu();
+		about_menu(frame_time);
 		ImGui::Checkbox("Use database IR balance", &use_database_ir_balance);
 		ImGui::Checkbox("Use database RGB sensitivity", &use_database_aero_match);
 	}

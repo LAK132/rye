@@ -83,7 +83,7 @@ option('lak_enable_lmdb',
 
 option('lak_enable_lua',
 	type: 'boolean',
-	value: true,
+	value: false,
 	yield: true,
 )
 
