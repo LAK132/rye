@@ -133,6 +133,12 @@ option('libraw_static_library',
 	yield: true,
 )
 
+option('libraw_use_x3ftools',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)
+
 # stb options
 
 option('lak_enable_stb',

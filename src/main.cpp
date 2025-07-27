@@ -205,14 +205,24 @@ void process_image(int white_level,
 
 	lak::vec2s_t isize{lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight};
 
-	// downscale debayer
+	// downscale demosaic
 	if (is_foveon)
 	{
-		ASSERT_NYI();
-
-#if 0
 		lrdimg.resize(flip4(isize));
-#endif
+
+		for (size_t y = 0; y < isize.y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  for (size_t x = 0; x < isize.x; ++x)
+				  {
+					  const lak::vec2s_t xy_dst = flip124({x, y}, lrdimg.size());
+					  const lak::vec2s_t xy_src{x, y};
+					  lrdimg[xy_dst] = lrawimg[xy_src];
+				  }
+			  });
+		}
 	}
 	else if (is_xtrans)
 	{
@@ -272,14 +282,14 @@ void process_image(int white_level,
 				  const size_t y2 = y * 2;
 				  for (size_t x = 0; x < isize.x; ++x)
 				  {
-					  const size_t x2       = x * 2;
-					  const lak::vec2s_t xy = flip124({x, y}, lrdimg.size());
-					  const lak::vec2s_t xy2{x2, y2};
+					  const size_t x2           = x * 2;
+					  const lak::vec2s_t xy_dst = flip124({x, y}, lrdimg.size());
+					  const lak::vec2s_t xy_src{x2, y2};
 
-					  lrdimg[xy].r = lrawimg[xy2 + channels[0U]].r;
-					  lrdimg[xy].g = std::max(lrawimg[xy2 + channels[1U]].g,
-					                          lrawimg[xy2 + channels[3U]].g);
-					  lrdimg[xy].b = lrawimg[xy2 + channels[2U]].b;
+					  lrdimg[xy_dst].r = lrawimg[xy_src + channels[0U]].r;
+					  lrdimg[xy_dst].g = std::max(lrawimg[xy_src + channels[1U]].g,
+					                              lrawimg[xy_src + channels[3U]].g);
+					  lrdimg[xy_dst].b = lrawimg[xy_src + channels[2U]].b;
 				  }
 			  });
 		}
@@ -494,8 +504,8 @@ struct main_window : lak::basic_window<main_window>
 		if (ImGui::BeginMenu("File"))
 		{
 			if (ImGui::MenuItem("Open...", nullptr, false))
-				open_pgetter.open_file(file_path(),
-				                       "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2},.*");
+				open_pgetter.open_file(
+				  file_path(), "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2,.X3F},.*");
 
 			if (ImGui::MenuItem("Save PNG (for editing)...",
 			                    nullptr,
@@ -567,6 +577,35 @@ SOFTWARE.
 			LAK_TREE_NODE("LibRaw")
 			{
 				ImGui::Text("https://github.com/LibRaw/LibRaw");
+			}
+			LAK_TREE_NODE("X3F tools (via LibRaw)")
+			{
+				ImGui::Text("https://github.com/LibRaw/LibRaw");
+				ImGui::Text("https://github.com/Kalpanika/x3f");
+				ImGui::Text(R"(Copyright (c) 2010, Roland Karlsson (roland@proxel.se)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the organization nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY ROLAND KARLSSON ''AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ROLAND KARLSSON BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.)");
 			}
 			LAK_TREE_NODE("stb_image_write")
 			{
