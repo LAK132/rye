@@ -784,6 +784,10 @@ THE SOFTWARE.)");
 				            lraw->imgdata.other.aperture,
 				            lraw->imgdata.other.focal_len);
 
+				ImGui::Separator();
+
+				ImGui::Text("Camera Settings");
+
 				if (use_database_ir_balance && used_ir_balance_from_db)
 				{
 					ImGui::Text("IR in Red: %.3f", ir_balance.ir_in_red);
@@ -804,12 +808,6 @@ THE SOFTWARE.)");
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
-				ImGui::Separator();
-
-				ImGui::DragFloat(
-				  "Temperature", &colour_temp, 10.f, 2000.f, 10000.f, "%.0fK");
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
 				ImGui::DragFloat3("RGB Sensitivity",
 				                  &ir_balance.aero_match.r,
 				                  0.001f,
@@ -819,6 +817,23 @@ THE SOFTWARE.)");
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();
+
+				ImGui::Text("Photo Settings");
+
+				ImGui::DragFloat(
+				  "Temperature", &colour_temp, 10.f, 2000.f, 10000.f, "%.0fK");
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				ImGui::DragFloat(
+				  "##DesqueezeInput", &desqueeze, 0.1f, 1.f, 3.f, "%.1fx");
+				if (anamorphic && ImGui::IsItemDeactivatedAfterEdit())
+					raw_update = true;
+				ImGui::SameLine();
+				if (ImGui::Checkbox("Desqueeze", &anamorphic)) raw_update = true;
+
+				ImGui::Separator();
+
+				ImGui::Text("Look Settings (Beta)");
 
 				ImGui::DragFloat("Exposure", &exposure, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
@@ -831,13 +846,6 @@ THE SOFTWARE.)");
 
 				ImGui::DragFloat("Saturation", &saturation, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
-				ImGui::DragFloat(
-				  "##DesqueezeInput", &desqueeze, 0.1f, 1.f, 3.f, "%.1fx");
-				if (anamorphic && ImGui::IsItemDeactivatedAfterEdit())
-					raw_update = true;
-				ImGui::SameLine();
-				if (ImGui::Checkbox("Desqueeze", &anamorphic)) raw_update = true;
 
 				if (image_process) ImGui::Text("Processing...");
 
