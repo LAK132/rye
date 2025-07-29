@@ -41,41 +41,40 @@ bool use_database_aero_match = true;
 bool used_ir_balance_from_db = false;
 struct rye_ir_balance
 {
-	float ir_in_red   = 1.f;
-	float ir_in_green = 1.f;
+	lak::vec3f_t ir_in{1.f, 1.f, 1.f};
 	lak::vec3f_t aero_match{.35f, 1.4f, .7f};
 };
 
 std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
   {"Canon EOS M50"_str,
    {
-     .ir_in_red   = 0.930f,
-     .ir_in_green = 0.730f,
-     .aero_match  = {.35f, 1.0f, .395f},
+     .ir_in      = {.930f, .730f, 1.f},
+     .aero_match = {.35f, 1.0f, .395f},
    }},
   {"Canon EOS M6 Mark II"_str,
    {
-     .ir_in_red   = 1.07f,
-     .ir_in_green = 0.9f,
-     .aero_match  = {.42f, 1.0f, .57f},
+     .ir_in      = {1.07f, .9f, 1.f},
+     .aero_match = {.42f, 1.0f, .57f},
    }},
   {"Fujifilm X-T30"_str,
    {
-     .ir_in_red   = 1.018f,
-     .ir_in_green = 0.978f,
-     .aero_match  = {.63f, 1.0f, .46f},
+     .ir_in      = {1.018f, .978f, 1.f},
+     .aero_match = {.63f, 1.0f, .46f},
    }},
   {"Nikon D5200"_str,
    {
-     .ir_in_red   = 1.036f,
-     .ir_in_green = 0.690f,
-     .aero_match  = {.2f, .55f, 1.f},
+     .ir_in      = {1.036f, .690f, 1.f},
+     .aero_match = {.2f, .55f, 1.f},
+   }},
+  {"Sigma sd Quattro H"_str,
+   {
+     .ir_in      = {1.79f, .335f, .25f},
+     .aero_match = {1.f, 1.f, 1.},
    }},
   {"Sony ILCE-7RM2"_str,
    {
-     .ir_in_red   = 1.030f,
-     .ir_in_green = 1.073f,
-     .aero_match  = {.5f, 1.0f, .85f},
+     .ir_in      = {1.030f, 1.073f, 1.f},
+     .aero_match = {.5f, 1.0f, .85f},
    }},
 };
 
@@ -126,10 +125,8 @@ void load_binary_async(const lak::fs::path &path)
 }
 
 void process_image(int white_level,
-                   float ir_in_red,
-                   float ir_in_green,
+                   rye_ir_balance ir_balance,
                    float colour_temp,
-                   lak::vec3f_t aero_match,
                    float exposure,
                    float lightness,
                    float contrast,
@@ -144,8 +141,8 @@ void process_image(int white_level,
 
 	auto wb = [](lak::vec3f_t point) -> lak::vec3f_t
 	{
-		float max = rye_vec_max(point);
-		return {max / point.r, max / point.g, max / point.b};
+		float mid = (rye_vec_max(point) + rye_vec_min(point)) / 2.f;
+		return {mid / point.r, mid / point.g, mid / point.b};
 	};
 
 	auto wave_clamp = [](float v) -> size_t
@@ -300,40 +297,109 @@ void process_image(int white_level,
 	lrwaveimg.resize({lrdimg.size().x, 1000U});
 	lrwaveimg.fill({0.f, 0.f, 0.f});
 	const float waveform_step = 100.f / float(lrdimg.size().y);
-	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	if (is_foveon)
 	{
-		tasks.push(
-		  [&, y = y]()
-		  {
-			  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
+		// on foveon sensors, even though blue is still our main IR-only channel,
+		// the IR primarily ends up in the red channel, so we have to be extra
+		// careful about exposure compensation.
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
 			  {
-				  lak::vec3f_t irgb = lrdimg[{x, y}];
-				  irgb.g += irgb.b - (ir_in_green * irgb.b);
-				  irgb.r += irgb.b - (ir_in_red * irgb.b);
-				  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
-				  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
-				  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
-			  }
-		  });
+				  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
+				  {
+					  lak::vec3f_t irgb = lrdimg[{x, y}];
+					  irgb.b /= ir_balance.ir_in.b;
+					  irgb.g += irgb.b - (ir_balance.ir_in.g * irgb.b);
+					  irgb.r += irgb.b - (ir_balance.ir_in.r * irgb.b);
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
+				  }
+			  });
+		}
+	}
+	else
+	{
+		// on bayer/x-trans sensors, blue is our primary IR channel
+		const float ir_in_red   = ir_balance.ir_in.r / ir_balance.ir_in.b;
+		const float ir_in_green = ir_balance.ir_in.g / ir_balance.ir_in.b;
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
+				  {
+					  lak::vec3f_t irgb = lrdimg[{x, y}];
+					  irgb.g += irgb.b - (ir_in_green * irgb.b);
+					  irgb.r += irgb.b - (ir_in_red * irgb.b);
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
+					  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
+				  }
+			  });
+		}
 	}
 	tasks.await();
 
 	// IR processing stage 1
-	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	if (is_foveon)
 	{
-		tasks.push(
-		  [&, y = y]()
-		  {
-			  for (size_t x = 0; x < lrdimg.size().x; ++x)
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
 			  {
-				  const float ir   = lrdimg[{x, y}].b;
-				  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_in_green * ir);
-				  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_in_red * ir);
-				  lrdimg[{x, y}].r = ir;
-			  }
-		  });
+				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  {
+					  const float ir   = lrdimg[{x, y}].b / ir_balance.ir_in.b;
+					  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_balance.ir_in.g * ir);
+					  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_balance.ir_in.r * ir);
+					  lrdimg[{x, y}].r = ir;
+				  }
+			  });
+		}
+	}
+	else
+	{
+		const float ir_in_red   = ir_balance.ir_in.r / ir_balance.ir_in.b;
+		const float ir_in_green = ir_balance.ir_in.g / ir_balance.ir_in.b;
+		for (size_t y = 0; y < lrdimg.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  for (size_t x = 0; x < lrdimg.size().x; ++x)
+				  {
+					  const float ir   = lrdimg[{x, y}].b;
+					  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_in_green * ir);
+					  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_in_red * ir);
+					  lrdimg[{x, y}].r = ir;
+				  }
+			  });
+		}
 	}
 	tasks.await();
+
+	// aerochrome sensitivity factor
+	const lak::vec3f_t aerochrome_sensitivity{
+	  std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
+	const lak::vec3f_t aero_balance = wb(aerochrome_sensitivity);
+
+	// camera sensitivity compensation
+	const lak::vec3f_t aero_match_balance = wb({1.f / ir_balance.aero_match.b,
+	                                            1.f / ir_balance.aero_match.r,
+	                                            1.f / ir_balance.aero_match.g});
+
+	// blackbody whitebalance
+	const lak::vec3f_t temp_sensitivity{
+	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
+	const lak::vec3f_t temp_balance = wb(temp_sensitivity);
+
+	const lak::vec3f_t balance =
+	  aero_balance * aero_match_balance * temp_balance;
 
 	// IR processing stage 2
 	for (size_t y = 0; y < lrdimg.size().y; ++y)
@@ -348,16 +414,7 @@ void process_image(int white_level,
 				  const float min = rye_vec_min<float>(irrgb);
 				  if (min < 0.0f) irrgb -= {min, min, min};
 
-				  lak::vec3f_t aerochrome_sensitivity{
-				    std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
-
-				  // camera sensitivity compensation
-				  irrgb *=
-				    wb({1.f / aero_match.b, 1.f / aero_match.r, 1.f / aero_match.g});
-				  // aerochrome sensitivity factor
-				  irrgb *= wb(aerochrome_sensitivity);
-				  // blackbody whitebalance
-				  irrgb *= wb({wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)});
+				  irrgb *= balance;
 			  }
 		  });
 	}
@@ -397,25 +454,31 @@ void process_image(int white_level,
 			  if (desqueeze)
 			  {
 				  auto sampler = rye_desqueeze_sampler(lrdimg, lrsrgbimg.size());
-				  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
-					  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
-					    sampler({x, y}), exposure, lightness, contrast, saturation));
+				  for (lak::vec2s_t xy = {0, y}; xy.x < lrsrgbimg.size().x; ++xy.x)
+				  {
+					  lrsrgbimg[xy] = sampler(xy);
+					  lrsrgbimg[xy] = rye_exp_correction(
+					    lrsrgbimg[xy], exposure, lightness, contrast, saturation);
+					  lrsrgbimg[xy] = rye_to_srgb(lrsrgbimg[xy]);
+				  }
 			  }
 			  else
 			  {
-				  for (size_t x = 0; x < lrsrgbimg.size().x; ++x)
-					  lrsrgbimg[{x, y}] = rye_to_srgb(rye_exp_correction(
-					    lrdimg[{x, y}], exposure, lightness, contrast, saturation));
+				  for (lak::vec2s_t xy = {0, y}; xy.x < lrsrgbimg.size().x; ++xy.x)
+				  {
+					  lrsrgbimg[xy] = lrdimg[xy];
+					  lrsrgbimg[xy] = rye_exp_correction(
+					    lrsrgbimg[xy], exposure, lightness, contrast, saturation);
+					  lrsrgbimg[xy] = rye_to_srgb(lrsrgbimg[xy]);
+				  }
 			  }
 		  });
 	}
 }
 
 void process_image_async(int white_level,
-                         float ir_in_red,
-                         float ir_in_green,
+                         rye_ir_balance balance,
                          float colour_temp,
-                         lak::vec3f_t aero_match,
                          float exposure,
                          float lightness,
                          float contrast,
@@ -424,10 +487,8 @@ void process_image_async(int white_level,
 {
 	image_process = lak::async(process_image,
 	                           white_level,
-	                           ir_in_red,
-	                           ir_in_green,
+	                           balance,
 	                           colour_temp,
-	                           aero_match,
 	                           exposure,
 	                           lightness,
 	                           contrast,
@@ -708,8 +769,7 @@ THE SOFTWARE.)");
 					{
 						if (use_database_ir_balance)
 						{
-							ir_balance.ir_in_red    = it->second.ir_in_red;
-							ir_balance.ir_in_green  = it->second.ir_in_green;
+							ir_balance.ir_in        = it->second.ir_in;
 							used_ir_balance_from_db = true;
 						}
 						if (use_database_aero_match)
@@ -754,10 +814,8 @@ THE SOFTWARE.)");
 				raw_update = false;
 				desqueeze  = std::max(.5f, std::min(10.f, desqueeze));
 				process_image_async(lraw_white_level,
-				                    ir_balance.ir_in_red,
-				                    ir_balance.ir_in_green,
+				                    ir_balance,
 				                    colour_temp,
-				                    ir_balance.aero_match,
 				                    exposure,
 				                    lightness,
 				                    contrast,
@@ -788,32 +846,36 @@ THE SOFTWARE.)");
 
 				ImGui::Text("Camera Settings");
 
-				if (use_database_ir_balance && used_ir_balance_from_db)
-				{
-					ImGui::Text("IR in Red: %.3f", ir_balance.ir_in_red);
-					ImGui::Text("IR in Green: %.3f", ir_balance.ir_in_green);
-				}
-				else
+				if (!use_database_ir_balance || !used_ir_balance_from_db)
 				{
 					ImGui::DragFloat(
-					  "IR in Red", &ir_balance.ir_in_red, 0.0001f, 0.1f, 2.0f);
+					  "IR in Red", &ir_balance.ir_in.r, 0.0001f, 0.1f, 2.0f);
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 					ImGui::DragFloat(
-					  "IR in Green", &ir_balance.ir_in_green, 0.0001f, 0.1f, 2.0f);
+					  "IR in Green", &ir_balance.ir_in.g, 0.0001f, 0.1f, 2.0f);
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "IR in Blue", &ir_balance.ir_in.b, 0.0001f, 0.1f, 2.0f);
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 				}
 
-				ImGui::SliderInt(
-				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				ImGui::Text(
+				  "IR in Red: %.3f/%.3f", ir_balance.ir_in.r, ir_balance.ir_in.b);
+				ImGui::Text(
+				  "IR in Green: %.3f/%.3f", ir_balance.ir_in.g, ir_balance.ir_in.b);
 
 				ImGui::DragFloat3("RGB Sensitivity",
 				                  &ir_balance.aero_match.r,
 				                  0.001f,
-				                  0.0f,
+				                  0.001f,
 				                  2.0f,
 				                  "1/%.3f");
+				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				ImGui::SliderInt(
+				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 				ImGui::Separator();

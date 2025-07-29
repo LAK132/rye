@@ -274,7 +274,6 @@ lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
                                 float saturation)
 {
 	exposure /= 10.f;
-	exposure += 1.f;
 	lightness /= 10.f;
 	lightness += 1.f;
 	contrast /= 10.f;
@@ -282,9 +281,9 @@ lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
 	saturation /= 10.f;
 	saturation += 1.f;
 
-	auto [H, S, L] = rye_rgb_to_hsl(colour);
+	colour *= std::exp(exposure);
 
-	L *= exposure;
+	auto [H, S, L] = rye_rgb_to_hsl(colour);
 
 	L = lak::sigmoid(-10.f / lightness, L);
 
