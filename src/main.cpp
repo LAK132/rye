@@ -266,10 +266,10 @@ void process_image(int white_level,
 		lrdimg.resize(flip4(isize));
 
 		lak::vec2s_t channels[4U] = {{0U, 0U}, {0U, 0U}, {0U, 0U}, {0U, 0U}};
-		for (int r = 0; r < 2; ++r)
-			for (int c = 0; c < 2; ++c)
-				if (int col = lraw->COLOR(r, c); col <= 3)
-					channels[size_t(col)] = {size_t(r), size_t(c)};
+		for (int y = 0; y < 2; ++y)
+			for (int x = 0; x < 2; ++x)
+				if (int col = lraw->COLOR(y, x); col <= 3)
+					channels[size_t(col)] = {size_t(x), size_t(y)};
 
 		for (size_t y = 0; y < isize.y; ++y)
 		{
