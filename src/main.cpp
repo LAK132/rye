@@ -998,15 +998,15 @@ THE SOFTWARE.)");
 				if (!use_database_ir_balance || !used_ir_balance_from_db)
 				{
 					ImGui::DragFloat(
-					  "R", &ir_balance.ir_in.r, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					  "R##IR in", &ir_balance.ir_in.r, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 					ImGui::DragFloat(
-					  "G", &ir_balance.ir_in.g, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					  "G##IR in", &ir_balance.ir_in.g, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 					ImGui::DragFloat(
-					  "B", &ir_balance.ir_in.b, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					  "B##IR in", &ir_balance.ir_in.b, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 				}
 				else
@@ -1026,15 +1026,15 @@ THE SOFTWARE.)");
 				if (!use_database_aero_match || !used_aero_match_from_db)
 				{
 					ImGui::DragFloat(
-					  "R", &ir_balance.aero_match.r, 0.001f, 0.001f, 2.0f, "IR/%.3f");
+					  "R##W", &ir_balance.aero_match.r, 0.001f, 0.001f, 2.0f, "IR/%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 					ImGui::DragFloat(
-					  "G", &ir_balance.aero_match.g, 0.001f, 0.001f, 2.0f, "R/%.3f");
+					  "G##W", &ir_balance.aero_match.g, 0.001f, 0.001f, 2.0f, "R/%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 
 					ImGui::DragFloat(
-					  "B", &ir_balance.aero_match.b, 0.001f, 0.001f, 2.0f, "G/%.3f");
+					  "B##W", &ir_balance.aero_match.b, 0.001f, 0.001f, 2.0f, "G/%.3f");
 					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
 				}
 				else
