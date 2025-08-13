@@ -51,6 +51,10 @@ lak::vec3f_t rye_desqueeze_sample(const lak::image<lak::vec3f_t> &src,
 lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
                                        float desqueeze);
 
+lak::image<lak::vec3f_t> rye_waveform(const lak::image<lak::vec3f_t> &img);
+
+lak::array<lak::vec3f_t> rye_histogram(const lak::image<lak::vec3f_t> &img);
+
 template<typename T>
 T rye_vec_max(lak::vec3<T> vec)
 {

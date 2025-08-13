@@ -1,5 +1,7 @@
 #include "rye.hpp"
 
+#include <lak/tasks.hpp>
+
 rye_texture rye_create_texture(const lak::image4_t &bitmap,
                                const lak::graphics_mode mode)
 {
@@ -197,6 +199,97 @@ lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
 
 	for (lak::vec2s_t xy = {0U, 0U}; xy.y < result.size().y; ++xy.y)
 		for (xy.x = 0U; xy.x < result.size().x; ++xy.x) result[xy] = sampler(xy);
+
+	return result;
+}
+
+lak::image<lak::vec3f_t> rye_waveform(const lak::image<lak::vec3f_t> &img)
+{
+	constexpr size_t wave_size = 1024U;
+	const float wave_step      = 100.f / float(img.size().y);
+
+	lak::image<lak::vec3f_t> result;
+	result.resize({img.size().x, wave_size});
+	result.fill({0.f, 0.f, 0.f});
+
+	auto wave_clamp = [](float v) -> size_t
+	{
+		v = std::log10((v * 90.f) + 10.f) - 1.f;
+		if (v <= 0.f)
+			return 0U;
+		else if (v >= 1.f)
+			return wave_size - 1U;
+
+		size_t res = static_cast<size_t>(v * wave_size);
+		if (res >= wave_size)
+			return wave_size - 1U;
+		else
+			return res;
+	};
+
+	lak::tasks tasks{lak::tasks::hardware_max()};
+
+	for (size_t y = 0; y < img.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < result.size().x; ++x)
+			  {
+				  const lak::vec3f_t &irgb = img[{x, y}];
+				  result[{x, (wave_size - 1U) - wave_clamp(irgb.r)}].r += wave_step;
+				  result[{x, (wave_size - 1U) - wave_clamp(irgb.g)}].g += wave_step;
+				  result[{x, (wave_size - 1U) - wave_clamp(irgb.b)}].b += wave_step;
+			  }
+		  });
+	}
+
+	tasks.await();
+
+	return result;
+}
+
+lak::array<lak::vec3f_t> rye_histogram(const lak::image<lak::vec3f_t> &img)
+{
+	constexpr size_t hist_size = 256U;
+	const float hist_step      = 100.f / float(img.contig_size());
+
+	lak::array<lak::vec3f_t> result;
+	result.resize(hist_size, lak::vec3f_t{0, 0, 0});
+
+	auto hist_clamp = [](float v) -> size_t
+	{
+		v = std::log10((v * 90.f) + 10.f) - 1.f;
+		if (v <= 0.f)
+			return 0U;
+		else if (v >= 1.f)
+			return hist_size - 1U;
+
+		size_t res = static_cast<size_t>(v * hist_size);
+		if (res >= hist_size)
+			return hist_size - 1U;
+		else
+			return res;
+	};
+
+	lak::tasks tasks{lak::tasks::hardware_max()};
+
+	for (size_t y = 0; y < img.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < img.size().x; ++x)
+			  {
+				  const lak::vec3f_t &irgb = img[{x, y}];
+				  result[hist_clamp(irgb.r)].r += hist_step;
+				  result[hist_clamp(irgb.g)].g += hist_step;
+				  result[hist_clamp(irgb.b)].b += hist_step;
+			  }
+		  });
+	}
+
+	tasks.await();
 
 	return result;
 }

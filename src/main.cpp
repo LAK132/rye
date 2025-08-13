@@ -33,48 +33,72 @@ bool binary_update = false, raw_update = false;
 
 rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex, lrwave2tex;
 
+void reset_textures()
+{
+	lrawtex      = lak::monostate{};
+	lrdebayertex = lak::monostate{};
+	lrsrgbtex    = lak::monostate{};
+	lrwavetex    = lak::monostate{};
+	lrwave2tex   = lak::monostate{};
+}
+
 lak::optional<LibRaw> lraw;
 lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg, lrwave2img;
+
+lak::array<lak::vec3f_t> _ir_histo, ir_histo, _white_histo, white_histo,
+  _srgb_histo, srgb_histo;
 
 bool use_database_ir_balance = true;
 bool use_database_aero_match = true;
 bool used_ir_balance_from_db = false;
+bool used_aero_match_from_db = false;
 struct rye_ir_balance
 {
 	lak::vec3f_t ir_in{1.f, 1.f, 1.f};
-	lak::vec3f_t aero_match{.35f, 1.4f, .7f};
+	lak::vec3f_t aero_match{.7f, .35f, 1.4f};
 };
 
 std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
+  {"Canon EOS 1200D"_str,
+   {
+     // Not tested with 850nm
+     .ir_in      = {1.f, 1.f, 1.f},
+     .aero_match = {.77f, .63f, 1.f},
+   }},
   {"Canon EOS M50"_str,
    {
      .ir_in      = {.930f, .730f, 1.f},
-     .aero_match = {.35f, 1.0f, .395f},
+     .aero_match = {.395f, .35f, 1.0f},
    }},
   {"Canon EOS M6 Mark II"_str,
    {
      .ir_in      = {1.07f, .9f, 1.f},
-     .aero_match = {.42f, 1.0f, .57f},
+     .aero_match = {.57f, .42f, 1.0f},
    }},
   {"Fujifilm X-T30"_str,
    {
      .ir_in      = {1.018f, .978f, 1.f},
-     .aero_match = {.63f, 1.0f, .46f},
+     .aero_match = {.46f, .63f, 1.0f},
    }},
   {"Nikon D5200"_str,
    {
      .ir_in      = {1.036f, .690f, 1.f},
-     .aero_match = {.2f, .55f, 1.f},
+     .aero_match = {1.f, .2f, .55f},
+   }},
+  {"Sigma sd Quattro"_str,
+   {
+     .ir_in      = {2.f, .373f, .146f},
+     .aero_match = {1.f, 1.f, 1.f},
    }},
   {"Sigma sd Quattro H"_str,
    {
      .ir_in      = {1.79f, .335f, .25f},
-     .aero_match = {1.f, 1.f, 1.},
+     .aero_match = {1.f, 1.f, 1.f},
    }},
   {"Sony ILCE-7RM2"_str,
    {
      .ir_in      = {1.030f, 1.073f, 1.f},
-     .aero_match = {.5f, 1.0f, .85f},
+     .aero_match = {.85f, .5f, 1.0f},
    }},
 };
 
@@ -137,27 +161,17 @@ void process_image(int white_level,
 	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
 		white_level = lraw->imgdata.color.maximum;
 
+	bool is_foveon = lraw->imgdata.idata.is_foveon;
+	bool is_xtrans = lraw->imgdata.idata.filters == 9U;
+
+	if (is_foveon) white_level = (1U << 14U) - 1U;
+
 	auto wb_wv = rye_relative_blackbody(colour_temp);
 
 	auto wb = [](lak::vec3f_t point) -> lak::vec3f_t
 	{
 		float mid = (rye_vec_max(point) + rye_vec_min(point)) / 2.f;
 		return {mid / point.r, mid / point.g, mid / point.b};
-	};
-
-	auto wave_clamp = [](float v) -> size_t
-	{
-		v = std::log10((v * 90.f) + 10.f) - 1.f;
-		if (v <= 0.f)
-			return 0U;
-		else if (v >= 1.f)
-			return 999U;
-
-		size_t res = static_cast<size_t>(v * 1000.f);
-		if (res >= 1000U)
-			return 999U;
-		else
-			return res;
 	};
 
 	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
@@ -181,9 +195,6 @@ void process_image(int white_level,
 		  });
 	}
 	tasks.await();
-
-	bool is_foveon = lraw->imgdata.idata.is_foveon;
-	bool is_xtrans = lraw->imgdata.idata.filters == 9U;
 
 	const int flip = lraw->imgdata.sizes.flip;
 	auto flip4     = [flip](lak::vec2s_t index) -> lak::vec2s_t
@@ -293,57 +304,6 @@ void process_image(int white_level,
 	}
 	tasks.await();
 
-	// generate ir balance waveform
-	lrwaveimg.resize({lrdimg.size().x, 1000U});
-	lrwaveimg.fill({0.f, 0.f, 0.f});
-	const float waveform_step = 100.f / float(lrdimg.size().y);
-	if (is_foveon)
-	{
-		// on foveon sensors, even though blue is still our main IR-only channel,
-		// the IR primarily ends up in the red channel, so we have to be extra
-		// careful about exposure compensation.
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
-				  {
-					  lak::vec3f_t irgb = lrdimg[{x, y}];
-					  irgb.b /= ir_balance.ir_in.b;
-					  irgb.g += irgb.b - (ir_balance.ir_in.g * irgb.b);
-					  irgb.r += irgb.b - (ir_balance.ir_in.r * irgb.b);
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
-				  }
-			  });
-		}
-	}
-	else
-	{
-		// on bayer/x-trans sensors, blue is our primary IR channel
-		const float ir_in_red   = ir_balance.ir_in.r / ir_balance.ir_in.b;
-		const float ir_in_green = ir_balance.ir_in.g / ir_balance.ir_in.b;
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < lrwaveimg.size().x; ++x)
-				  {
-					  lak::vec3f_t irgb = lrdimg[{x, y}];
-					  irgb.g += irgb.b - (ir_in_green * irgb.b);
-					  irgb.r += irgb.b - (ir_in_red * irgb.b);
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
-					  lrwaveimg[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
-				  }
-			  });
-		}
-	}
-	tasks.await();
-
 	// IR processing stage 1
 	if (is_foveon)
 	{
@@ -383,6 +343,10 @@ void process_image(int white_level,
 	}
 	tasks.await();
 
+	// generate ir balance histogram and waveform
+	lrwaveimg = rye_waveform(lrdimg);
+	_ir_histo = rye_histogram(lrdimg);
+
 	// aerochrome sensitivity factor
 	const lak::vec3f_t aerochrome_sensitivity{
 	  std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
@@ -420,24 +384,9 @@ void process_image(int white_level,
 	}
 	tasks.await();
 
-	// generate white balance waveform
-	lrwave2img.resize({lrdimg.size().x, 1000U});
-	lrwave2img.fill({0.f, 0.f, 0.f});
-	for (size_t y = 0; y < lrdimg.size().y; ++y)
-	{
-		tasks.push(
-		  [&, y = y]()
-		  {
-			  for (size_t x = 0; x < lrwave2img.size().x; ++x)
-			  {
-				  lak::vec3f_t irgb = lrdimg[{x, y}];
-				  lrwave2img[{x, 999U - wave_clamp(irgb.r)}].r += waveform_step;
-				  lrwave2img[{x, 999U - wave_clamp(irgb.g)}].g += waveform_step;
-				  lrwave2img[{x, 999U - wave_clamp(irgb.b)}].b += waveform_step;
-			  }
-		  });
-	}
-	tasks.await();
+	// generate white balance histogram and waveform
+	lrwave2img   = rye_waveform(lrdimg);
+	_white_histo = rye_histogram(lrdimg);
 
 	// convert to sRGB
 	if_let_some (float stretch, desqueeze)
@@ -474,6 +423,10 @@ void process_image(int white_level,
 			  }
 		  });
 	}
+	tasks.await();
+
+	// generate final histogram
+	_srgb_histo = rye_histogram(lrsrgbimg);
 }
 
 void process_image_async(int white_level,
@@ -730,8 +683,10 @@ THE SOFTWARE.)");
 	{
 		file_menu();
 		about_menu(frame_time);
-		ImGui::Checkbox("Use database IR balance", &use_database_ir_balance);
-		ImGui::Checkbox("Use database RGB sensitivity", &use_database_aero_match);
+		ImGui::Checkbox("Use sensor database IR white point",
+		                &use_database_ir_balance);
+		ImGui::Checkbox("Use sensor database RGB white point",
+		                &use_database_aero_match);
 	}
 
 	static void main_region(float frame_time)
@@ -760,7 +715,16 @@ THE SOFTWARE.)");
 				raw_update    = true;
 				time_acc      = 0.0f;
 
+				reset_textures();
+
+				ir_histo.clear();
+				white_histo.clear();
+				srgb_histo.clear();
+
+				lraw_white_level = lraw->imgdata.color.maximum;
+
 				used_ir_balance_from_db = false;
+				used_aero_match_from_db = false;
 				if (use_database_ir_balance || use_database_aero_match)
 				{
 					if (auto it = ir_balance_db.find(lraw->imgdata.idata.make + " "_str +
@@ -774,7 +738,8 @@ THE SOFTWARE.)");
 						}
 						if (use_database_aero_match)
 						{
-							ir_balance.aero_match = it->second.aero_match;
+							ir_balance.aero_match   = it->second.aero_match;
+							used_aero_match_from_db = true;
 						}
 					}
 				}
@@ -802,6 +767,9 @@ THE SOFTWARE.)");
 			if (image_process && image_process->has_value())
 			{
 				image_process.reset();
+				ir_histo     = lak::move(_ir_histo);
+				white_histo  = lak::move(_white_histo);
+				srgb_histo   = lak::move(_srgb_histo);
 				lrawtex      = rye_create_texture(lrawimg, graphics_mode());
 				lrdebayertex = rye_create_texture(lrdimg, graphics_mode());
 				lrsrgbtex    = rye_create_texture(lrsrgbimg, graphics_mode());
@@ -830,6 +798,45 @@ THE SOFTWARE.)");
 				static float left_size  = std::min<float>(content_size.x / 2, 500.f);
 				static float right_size = content_size.x - left_size;
 
+				auto draw_histo = [](const lak::astring &label,
+				                     lak::span<lak::vec3f_t> data,
+				                     ImVec2 size = ImVec2(0, 0))
+				{
+					ImGui::PlotHistogram(
+					  ("R" + label).c_str(),
+					  [](void *d, int idx) -> float
+					  { return reinterpret_cast<lak::vec3f_t *>(d)[idx].r; },
+					  (void *)data.data(),
+					  static_cast<int>(data.size()),
+					  0,
+					  nullptr,
+					  FLT_MAX,
+					  FLT_MAX,
+					  size);
+					ImGui::PlotHistogram(
+					  ("G" + label).c_str(),
+					  [](void *d, int idx) -> float
+					  { return reinterpret_cast<lak::vec3f_t *>(d)[idx].g; },
+					  (void *)data.data(),
+					  static_cast<int>(data.size()),
+					  0,
+					  nullptr,
+					  FLT_MAX,
+					  FLT_MAX,
+					  size);
+					ImGui::PlotHistogram(
+					  ("B" + label).c_str(),
+					  [](void *d, int idx) -> float
+					  { return reinterpret_cast<lak::vec3f_t *>(d)[idx].b; },
+					  (void *)data.data(),
+					  static_cast<int>(data.size()),
+					  0,
+					  nullptr,
+					  FLT_MAX,
+					  FLT_MAX,
+					  size);
+				};
+
 				lak::VertSplitter(left_size, right_size, content_size.x);
 
 				ImGui::BeginChild(
@@ -846,37 +853,65 @@ THE SOFTWARE.)");
 
 				ImGui::Text("Camera Settings");
 
-				if (!use_database_ir_balance || !used_ir_balance_from_db)
-				{
-					ImGui::DragFloat(
-					  "IR in Red", &ir_balance.ir_in.r, 0.0001f, 0.1f, 2.0f);
-					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
-					ImGui::DragFloat(
-					  "IR in Green", &ir_balance.ir_in.g, 0.0001f, 0.1f, 2.0f);
-					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
-					ImGui::DragFloat(
-					  "IR in Blue", &ir_balance.ir_in.b, 0.0001f, 0.1f, 2.0f);
-					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-				}
-
-				ImGui::Text(
-				  "IR in Red: %.3f/%.3f", ir_balance.ir_in.r, ir_balance.ir_in.b);
-				ImGui::Text(
-				  "IR in Green: %.3f/%.3f", ir_balance.ir_in.g, ir_balance.ir_in.b);
-
-				ImGui::DragFloat3("RGB Sensitivity",
-				                  &ir_balance.aero_match.r,
-				                  0.001f,
-				                  0.001f,
-				                  2.0f,
-				                  "1/%.3f");
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
-
 				ImGui::SliderInt(
 				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				ImGui::Separator();
+
+				ImGui::Text("Raw IR white point");
+
+				if (!use_database_ir_balance || !used_ir_balance_from_db)
+				{
+					ImGui::DragFloat(
+					  "R", &ir_balance.ir_in.r, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "G", &ir_balance.ir_in.g, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "B", &ir_balance.ir_in.b, 0.0001f, 0.1f, 2.0f, "IR*%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				}
+				else
+				{
+					ImGui::Text(
+					  "IR in R: %.3f/%.3f", ir_balance.ir_in.r, ir_balance.ir_in.b);
+					ImGui::Text(
+					  "IR in G: %.3f/%.3f", ir_balance.ir_in.g, ir_balance.ir_in.b);
+				}
+
+				draw_histo("##IR HISTO", ir_histo, ImVec2(0, 60));
+
+				ImGui::Separator();
+
+				ImGui::Text("Raw RGB white point");
+
+				if (!use_database_aero_match || !used_aero_match_from_db)
+				{
+					ImGui::DragFloat(
+					  "R", &ir_balance.aero_match.r, 0.001f, 0.001f, 2.0f, "IR/%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "G", &ir_balance.aero_match.g, 0.001f, 0.001f, 2.0f, "R/%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+					ImGui::DragFloat(
+					  "B", &ir_balance.aero_match.b, 0.001f, 0.001f, 2.0f, "G/%.3f");
+					if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				}
+				else
+				{
+					ImGui::Text("R: IR/%.3f\nG: R/%.3f\nB: G/%.3f",
+					            ir_balance.aero_match.r,
+					            ir_balance.aero_match.g,
+					            ir_balance.aero_match.b);
+				}
+
+				draw_histo("##WHITE HISTO", white_histo, ImVec2(0, 60));
 
 				ImGui::Separator();
 
@@ -908,6 +943,8 @@ THE SOFTWARE.)");
 
 				ImGui::DragFloat("Saturation", &saturation, 0.1f, -100.f, 100.f);
 				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+
+				draw_histo("##sRGB HISTO", srgb_histo, ImVec2(0, 60));
 
 				if (image_process) ImGui::Text("Processing...");
 
@@ -1085,9 +1122,5 @@ void basic_window_loop(lak::window &window, uint64_t counter_delta)
 void basic_window_quit(lak::window &)
 {
 	lraw.reset();
-	lrawtex      = lak::monostate{};
-	lrdebayertex = lak::monostate{};
-	lrsrgbtex    = lak::monostate{};
-	lrwavetex    = lak::monostate{};
-	lrwave2tex   = lak::monostate{};
+	reset_textures();
 }
