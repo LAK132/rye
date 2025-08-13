@@ -7,6 +7,8 @@
 #include <lak/tasks.hpp>
 #include <lak/test.hpp>
 
+#include <lak/structure/tiff.hpp>
+
 #include <lak/opengl/state.hpp>
 
 #include <stb_image_write.h>
@@ -496,7 +498,129 @@ struct main_window : lak::basic_window<main_window>
 		  int(processedimg.contig_size_bytes() / processedimg.size().y));
 	}
 
-	static void save_dng_file(const lak::fs::path &) { ASSERT_NYI(); }
+	static void save_dng_file(const lak::fs::path &path)
+	{
+		lak::binary_array_writer strm;
+
+		lak::tiff::tiff tiff;
+
+		tiff.ifd.clear();
+
+		// tags must be in ascending order by id
+
+		// use enhanced image data?
+
+		tiff.ifh.version = 42;
+		auto &ifd0       = tiff.ifd.emplace_back();
+
+		lak::image<lak::vec3u16_t> img16;
+		img16.resize(lrdimg.size());
+
+		for (lak::vec2s_t xy = {0, 0}; xy.y < img16.size().y; ++xy.y)
+		{
+			for (xy.x = 0; xy.x < img16.size().x; ++xy.x)
+			{
+				img16[xy].r = static_cast<uint16_t>(std::max<long long>(
+				  std::min<long long>(std::llround(lrdimg[xy].r * float(UINT16_MAX)),
+				                      UINT16_MAX),
+				  0));
+				img16[xy].g = static_cast<uint16_t>(std::max<long long>(
+				  std::min<long long>(std::llround(lrdimg[xy].g * float(UINT16_MAX)),
+				                      UINT16_MAX),
+				  0));
+				img16[xy].b = static_cast<uint16_t>(std::max<long long>(
+				  std::min<long long>(std::llround(lrdimg[xy].b * float(UINT16_MAX)),
+				                      UINT16_MAX),
+				  0));
+			}
+		}
+
+		static_assert(
+		  lak::to_bytes_traits<lak::vec3u16_t, lak::endian::native>::const_size);
+		size_t row_size_bytes =
+		  img16.size().x *
+		  lak::to_bytes_traits<lak::vec3u16_t, lak::endian::native>::size;
+		[[maybe_unused]] size_t img_size_bytes = img16.size().y * row_size_bytes;
+
+		// strips may not exceed 64KB decompressed
+		ifd0.rows = static_cast<uint32_t>(64'000U / row_size_bytes);
+		ASSERT_GREATER(ifd0.rows, 0U);
+		size_t strip_count = lak::ceil_div<size_t>(img16.size().y, ifd0.rows);
+		ASSERT_GREATER(strip_count, 0U);
+
+		for (size_t s = 0; s < strip_count; ++s)
+		{
+			auto &ifd0_strip = ifd0.strips.emplace_back();
+
+			size_t row_start = s * ifd0.rows;
+			size_t row_end = std::min<size_t>(row_start + ifd0.rows, img16.size().y);
+
+			size_t begin = row_start * lrdimg.size().x;
+			size_t count = (row_end - row_start) * lrdimg.size().x;
+
+			ifd0_strip.data.resize((row_end - row_start) * row_size_bytes);
+			lak::binary_span_writer{lak::span(ifd0_strip.data)}
+			  .write<lak::endian::native>(
+			    lak::span<const lak::vec3u16_t>(img16.data() + begin, count))
+			  .UNWRAP();
+		}
+
+		ifd0.push_NewSubfileType(lak::fixed_array(uint32_t(0U)));
+		ifd0.push_ImageWidth(
+		  lak::fixed_array(static_cast<uint32_t>(img16.size().x)));
+		ifd0.push_ImageLength(
+		  lak::fixed_array(static_cast<uint32_t>(img16.size().y)));
+		ifd0.push_BitsPerSample(
+		  lak::fixed_array(uint16_t(16U), uint16_t(16U), uint16_t(16U)));
+		ifd0.push_Compression(lak::fixed_array(uint16_t(1U)));
+		// LinearRaw
+		ifd0.push_PhotometricInterpretation(lak::fixed_array(uint16_t(34892U)));
+		ifd0.push_Make(lak::astring_view((const char *)lraw->imgdata.idata.make));
+		ifd0.push_Model(
+		  lak::astring_view((const char *)lraw->imgdata.idata.model));
+		ifd0.push_Orientation(lak::fixed_array((uint16_t(1U))));
+		ifd0.push_SamplesPerPixel(lak::fixed_array(uint16_t(3U)));
+
+		ifd0.push_XResolution(lak::fixed_array(
+		  lak::tiff::urational{.numerator = 300, .denominator = 1}));
+		ifd0.push_YResolution(lak::fixed_array(
+		  lak::tiff::urational{.numerator = 300, .denominator = 1}));
+		ifd0.push_ResolutionUnit(lak::fixed_array(uint16_t(2U)));
+		ifd0.push_Software(APP_NAME ""_view);
+		ifd0.push_SampleFormat({1U});
+
+		if (lraw->imgdata.other.shutter != 0.f)
+			ifd0.push_ExposureTime(lak::fixed_array(lak::tiff::urational{
+			  1000U, uint32_t((1.f / lraw->imgdata.other.shutter) * 1000)}));
+		ifd0.push_FNumber(lak::fixed_array(lak::tiff::urational{
+		  uint32_t(lraw->imgdata.other.aperture * 100), 100U}));
+		ifd0.push_ISOSpeedRatings(
+		  lak::fixed_array(uint16_t(lraw->imgdata.other.iso_speed)));
+		ifd0.push_FocalLength(lak::fixed_array(lak::tiff::urational{
+		  uint32_t(lraw->imgdata.other.focal_len * 100), 100U}));
+
+		ifd0.push_DNGVersion(
+		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
+		ifd0.push_DNGBackwardVersion(
+		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
+		ifd0.push_UniqueCameraModel(lak::string_view(
+		  lraw->imgdata.idata.make + " "_str + lraw->imgdata.idata.model));
+		ifd0.push_CameraSerialNumber(
+		  lak::astring_view((const char *)lraw->imgdata.shootinginfo.BodySerial));
+
+		auto &exif = ifd0.push_exif();
+
+		exif.push_LensMake(
+		  lak::astring_view((const char *)lraw->imgdata.lens.LensMake));
+		exif.push_LensModel(
+		  lak::astring_view((const char *)lraw->imgdata.lens.Lens));
+		exif.push_LensSerialNumber(
+		  lak::astring_view((const char *)lraw->imgdata.lens.LensSerial));
+
+		strm.write<lak::endian::native>(tiff).UNWRAP();
+
+		lak::save_file(path, strm.data);
+	}
 
 	static const lak::fs::path &file_path() { return binary_path; }
 
@@ -519,9 +643,19 @@ struct main_window : lak::basic_window<main_window>
 		{
 			if (ImGui::MenuItem("Open...", nullptr, false))
 				open_pgetter.open_file(
-				  file_path(), "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2,.X3F},.*");
+				  file_path(),
+				  "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2,.DNG,.X3F},.*");
 
-			if (ImGui::MenuItem("Save PNG (for editing)...",
+			if (ImGui::MenuItem(
+			      "Save DNG...", nullptr, false, lrdimg.contig_size() != 0U))
+			{
+				save_dng_pgetter.save_file(
+				  file_path().parent_path() /
+				    (file_path().stem().u8string() + u8".DNG"),
+				  "Image Files{.DNG}");
+			}
+
+			if (ImGui::MenuItem("Save PNG (linear)...",
 			                    nullptr,
 			                    false,
 			                    lrdimg.contig_size() != 0U))
@@ -533,7 +667,7 @@ struct main_window : lak::basic_window<main_window>
 				  "Image Files{.PNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (sRGB final)...",
+			if (ImGui::MenuItem("Save PNG (sRGB)...",
 			                    nullptr,
 			                    false,
 			                    lrsrgbimg.contig_size() != 0U))
