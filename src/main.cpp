@@ -311,6 +311,57 @@ void process_image(int white_level,
 	}
 	tasks.await();
 
+	// generate ir balance histogram and waveform
+	{
+		lak::image<lak::vec3f_t> wavetemp = lrdimg;
+		if (is_foveon)
+		{
+			// on foveon sensors, even though blue is still our main IR-only channel,
+			// the IR primarily ends up in the red channel, so we have to be extra
+			// careful about exposure compensation.
+			for (size_t y = 0; y < wavetemp.size().y; ++y)
+			{
+				tasks.push(
+				  [&, y = y]()
+				  {
+					  for (size_t x = 0; x < wavetemp.size().x; ++x)
+					  {
+						  lak::vec3f_t &irgb = wavetemp[{x, y}];
+						  irgb.b /= ir_balance.ir_in.b;
+						  irgb.g += irgb.b - (ir_balance.ir_in.g * irgb.b);
+						  irgb.r += irgb.b - (ir_balance.ir_in.r * irgb.b);
+					  }
+				  });
+			}
+
+			tasks.await();
+		}
+		else
+		{
+			// on bayer/x-trans sensors, blue is our primary IR channel
+			const float ir_in_red   = ir_balance.ir_in.r / ir_balance.ir_in.b;
+			const float ir_in_green = ir_balance.ir_in.g / ir_balance.ir_in.b;
+			for (size_t y = 0; y < wavetemp.size().y; ++y)
+			{
+				tasks.push(
+				  [&, y = y]()
+				  {
+					  for (size_t x = 0; x < wavetemp.size().x; ++x)
+					  {
+						  lak::vec3f_t &irgb = wavetemp[{x, y}];
+						  irgb.g += irgb.b - (ir_in_green * irgb.b);
+						  irgb.r += irgb.b - (ir_in_red * irgb.b);
+					  }
+				  });
+			}
+
+			tasks.await();
+		}
+
+		lrwaveimg = rye_waveform(wavetemp);
+		_ir_histo = rye_histogram(wavetemp);
+	}
+
 	// IR processing stage 1
 	if (is_foveon)
 	{
@@ -328,6 +379,8 @@ void process_image(int white_level,
 				  }
 			  });
 		}
+
+		tasks.await();
 	}
 	else
 	{
@@ -347,12 +400,9 @@ void process_image(int white_level,
 				  }
 			  });
 		}
-	}
-	tasks.await();
 
-	// generate ir balance histogram and waveform
-	lrwaveimg = rye_waveform(lrdimg);
-	_ir_histo = rye_histogram(lrdimg);
+		tasks.await();
+	}
 
 	// aerochrome sensitivity factor
 	const lak::vec3f_t aerochrome_sensitivity{
