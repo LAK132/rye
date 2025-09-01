@@ -77,6 +77,11 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
      .ir_in      = {1.07f, .9f, 1.f},
      .aero_match = {.57f, .42f, 1.0f},
    }},
+  {"Canon EOS R5"_str,
+   {
+     .ir_in      = {1.01f, .95f, 1.f},
+     .aero_match = {.77f, .35f, .65f},
+   }},
   {"Fujifilm X-T30"_str,
    {
      .ir_in      = {1.018f, .978f, 1.f},
