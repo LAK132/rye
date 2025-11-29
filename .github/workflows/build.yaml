@@ -12,11 +12,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, ubuntu-24.04, macos-13]
-        arch: [x86, x64]
+        os: [windows-2022, ubuntu-24.04, macos-15]
+        arch: [x86, x64, arm64]
         exclude:
-          - os: macos-13
+          - os: windows-2022
+            arch: arm64
+          - os: ubuntu-24.04
+            arch: arm64
+          - os: macos-15
             arch: x86
+          - os: macos-15
+            arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +56,8 @@ jobs:
       - if: startsWith(matrix.os, 'macos')
         run: |
           brew install meson ninja
-          echo "CC=$(brew --prefix llvm@15)/bin/clang" >> $GITHUB_ENV
-          echo "CXX=$(brew --prefix llvm@15)/bin/clang++" >> $GITHUB_ENV
+          echo "CC=$(brew --prefix llvm@18)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@18)/bin/clang++" >> $GITHUB_ENV
 
         # _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR is a hack fix for https://github.com/actions/runner-images/issues/10004
       - run: meson setup build -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" --buildtype debugoptimized

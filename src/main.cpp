@@ -4,12 +4,16 @@
 #include <lak/file.hpp>
 #include <lak/future.hpp>
 #include <lak/strconv.hpp>
+#include <lak/system/file.hpp>
 #include <lak/tasks.hpp>
 #include <lak/test.hpp>
 
 #include <lak/structure/tiff.hpp>
 
-#include <lak/opengl/state.hpp>
+#include <lak/system/opengl/state.hpp>
+
+#include <lak/string_literals/span.hpp>
+#include <lak/string_literals/string.hpp>
 
 #include <stb_image_write.h>
 

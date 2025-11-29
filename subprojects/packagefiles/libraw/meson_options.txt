@@ -1,0 +1,5 @@
+option('libraw_static_library',
+	type: 'boolean',
+	value: true,
+	yield: true,
+)

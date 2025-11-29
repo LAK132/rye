@@ -1,8 +1,8 @@
-#include <lak/opengl/texture.hpp>
+#include <lak/system/opengl/texture.hpp>
 
 #include <lak/imgui/basic_window.hpp>
 #include <lak/imgui/widgets.hpp>
-#include <misc/softraster/texture.h>
+#include <lak/softrender/texture.hpp>
 
 using rye_texture =
   lak::variant<lak::monostate, lak::opengl::texture, texture_color32_t>;

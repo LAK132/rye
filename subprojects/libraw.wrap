@@ -1,4 +1,8 @@
 [wrap-git]
-url = https://github.com/LAK132/wraps
-revision = libraw
+url = https://github.com/LibRaw/LibRaw
+revision = 94b6cb5e2a4ee137b1b59fcac73be258d5a90277
 depth = 1
+patch_directory = libraw
+
+[provide]
+dependency_names = libraw
