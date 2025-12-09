@@ -16,6 +16,14 @@ c_args = lak_subprj.get_variable('c_args')
 version = lak_subprj.get_variable('version')
 lak_dep = lak_subprj.get_variable('lak_dep')
 
+cxx = meson.get_compiler('cpp')
+
+if cxx.get_id() == 'msvc'
+	c_cpp_args += [
+		'-bigobj',
+	]
+endif
+
 add_project_arguments(c_cpp_args + cpp_args, language: ['cpp'])
 add_project_arguments(c_cpp_args + c_args, language: ['c'])
 

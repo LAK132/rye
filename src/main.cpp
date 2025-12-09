@@ -1,7 +1,8 @@
+#define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
+
 #include "main.hpp"
 #include "rye.hpp"
 
-#include <lak/file.hpp>
 #include <lak/future.hpp>
 #include <lak/strconv.hpp>
 #include <lak/system/file.hpp>
@@ -23,8 +24,7 @@
 
 #include <inttypes.h>
 
-#define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
-#include <lak/basic_single_window_program.inl>
+#include <lak/basic_program.inl>
 
 #include <unordered_map>
 
@@ -37,15 +37,15 @@ lak::optional<lak::future<void>> binary_load, image_process;
 lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
-rye_texture lrawtex, lrdebayertex, lrsrgbtex, lrwavetex, lrwave2tex;
+ImTextureRef lrawtex, lrdebayertex, lrsrgbtex, lrwavetex, lrwave2tex;
 
 void reset_textures()
 {
-	lrawtex      = lak::monostate{};
-	lrdebayertex = lak::monostate{};
-	lrsrgbtex    = lak::monostate{};
-	lrwavetex    = lak::monostate{};
-	lrwave2tex   = lak::monostate{};
+	lak::DestroyTexture(lrawtex);
+	lak::DestroyTexture(lrdebayertex);
+	lak::DestroyTexture(lrsrgbtex);
+	lak::DestroyTexture(lrwavetex);
+	lak::DestroyTexture(lrwave2tex);
 }
 
 lak::optional<LibRaw> lraw;
@@ -963,11 +963,11 @@ THE SOFTWARE.)");
 				ir_histo     = lak::move(_ir_histo);
 				white_histo  = lak::move(_white_histo);
 				srgb_histo   = lak::move(_srgb_histo);
-				lrawtex      = rye_create_texture(lrawimg, graphics_mode());
-				lrdebayertex = rye_create_texture(lrdimg, graphics_mode());
-				lrsrgbtex    = rye_create_texture(lrsrgbimg, graphics_mode());
-				lrwavetex    = rye_create_texture(lrwaveimg, graphics_mode());
-				lrwave2tex   = rye_create_texture(lrwave2img, graphics_mode());
+				lrawtex      = lak::CreateTexture(lrawimg);
+				lrdebayertex = lak::CreateTexture(lrdimg);
+				lrsrgbtex    = lak::CreateTexture(lrsrgbimg);
+				lrwavetex    = lak::CreateTexture(lrwaveimg);
+				lrwave2tex   = lak::CreateTexture(lrwave2img);
 			}
 
 			if (raw_update && !image_process)
@@ -1034,8 +1034,10 @@ THE SOFTWARE.)");
 
 				ImGui::BeginChild(
 				  "ImgLeft", {left_size, -1}, true, ImGuiWindowFlags_NoSavedSettings);
-				ImGui::Text("Make: '%s'", lraw->imgdata.idata.make);
-				ImGui::Text("Model: '%s'", lraw->imgdata.idata.model);
+				ImGui::Text("%s %s + %s",
+				            lraw->imgdata.idata.make,
+				            lraw->imgdata.idata.model,
+				            lraw->imgdata.lens.Lens);
 				ImGui::Text("ISO %.0f 1/%.0fs f/%.0f %.0fmm",
 				            lraw->imgdata.other.iso_speed,
 				            1.0f / lraw->imgdata.other.shutter,
@@ -1180,14 +1182,86 @@ THE SOFTWARE.)");
 	}
 };
 
-lak::optional<int> basic_program_preinit(lak::span<char *> args)
+struct rye_window : virtual public basic_window_api
+{
+	rye_window() : basic_window_api() {}
+
+	virtual ~rye_window()
+	{
+		lraw.reset();
+		reset_textures();
+	}
+
+	virtual void init() override final
+	{
+		lak::debugger.crash_path = std::filesystem::current_path() /
+		                           "ATTACH-TO-ISSUE-ON-RYE-GITHUB-REPO.txt";
+
+		lak::debugger.live_output_enabled = true;
+
+		graphics_mode = window().graphics();
+
+		DEBUG("Graphics: ", graphics_mode);
+		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
+			std::cout << "Graphics: " << graphics_mode << "\n";
+
+		switch (graphics_mode)
+		{
+			case lak::graphics_mode::OpenGL:
+			{
+				opengl_major = lak::opengl::get_uint(GL_MAJOR_VERSION).UNWRAP();
+				opengl_minor = lak::opengl::get_uint(GL_MINOR_VERSION).UNWRAP();
+			}
+			break;
+
+			default:
+				break;
+		}
+
+		window().set_title(L"" APP_NAME);
+	}
+
+	virtual void handle_event(lak::event &event) override final
+	{
+		switch (event.type)
+		{
+			case lak::event_type::close_window:
+				destroy();
+				break;
+
+			case lak::event_type::dropfile:
+				load_binary_async(lak::fs::path(event.dropfile().path));
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	virtual void loop(uint64_t counter_delta) override final
+	{
+		const float frame_time =
+		  (float)counter_delta / lak::performance_frequency();
+
+		main_window::draw(frame_time);
+
+		if (binary_update)
+		{
+			window().set_title(L"" APP_NAME " (" + binary_path.generic_wstring() +
+			                   L")");
+			binary_update = false;
+		}
+	}
+};
+
+lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 {
 	if (!args.empty()) args = args.subspan(1U);
 
 	if (args.size() == 1U && args[0] == lak::astring("--version"))
 	{
 		std::cout << APP_NAME << "\n";
-		return lak::optional<int>(0);
+		return lak::err_t{EXIT_SUCCESS};
 	}
 
 	lak::debugger.std_out(u8"", u8"" APP_NAME "\n");
@@ -1202,7 +1276,7 @@ lak::optional<int> basic_program_preinit(lak::span<char *> args)
 			             "[--onlyerr] "
 			             "[<filepath>]\n";
 
-			return lak::optional<int>(0);
+			return lak::err_t{EXIT_SUCCESS};
 		}
 		else if (args[arg] == lak::astring("--nogl"))
 		{
@@ -1223,75 +1297,45 @@ lak::optional<int> basic_program_preinit(lak::span<char *> args)
 		}
 	}
 
-	return lak::nullopt;
+	return lak::ok_t{};
 }
 
-lak::optional<int> basic_single_window_program_init()
+lak::weak_ptr<basic_window_instance<rye_window>> wnd_ptr;
+
+lak::error_code<int> basic_program_init()
 {
 	basic_window_target_framerate                = 30;
 	basic_window_opengl_settings.major           = 3;
 	basic_window_opengl_settings.minor           = 2;
 	basic_window_opengl_settings.double_buffered = true;
-	basic_window_clear_colour                    = {0.0f, 0.0f, 0.0f, 1.0f};
 
-	basic_imgui_main_window_flags =
-	  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar |
-	  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoSavedSettings |
-	  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove;
+	wnd_ptr =
+	  basic_create_window<rye_window>(basic_window_opengl_settings).UNWRAP();
+
+	{
+		auto window = wnd_ptr.get();
+
+		ASSERT(!!window);
+
+		window->imgui_window_flags =
+		  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar |
+		  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoSavedSettings |
+		  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove;
+
+		window->clear_colour = {0.0f, 0.0f, 0.0f, 1.0f};
+	}
 
 	lraw.emplace();
 
-	return lak::nullopt;
+	return lak::ok_t{};
 }
 
-int basic_program_quit() { return EXIT_SUCCESS; }
-
-void basic_window_init(lak::window &window)
-{
-	lak::debugger.crash_path =
-	  std::filesystem::current_path() / "ATTACH-TO-ISSUE-ON-RYE-GITHUB-REPO.txt";
-
-	lak::debugger.live_output_enabled = true;
-
-	graphics_mode = window.graphics();
-
-	DEBUG("Graphics: ", graphics_mode);
-	if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
-		std::cout << "Graphics: " << graphics_mode << "\n";
-
-	switch (graphics_mode)
-	{
-		case lak::graphics_mode::OpenGL:
-		{
-			opengl_major = lak::opengl::get_uint(GL_MAJOR_VERSION).UNWRAP();
-			opengl_minor = lak::opengl::get_uint(GL_MINOR_VERSION).UNWRAP();
-		}
-		break;
-
-		default:
-			break;
-	}
-
-	window.set_title(L"" APP_NAME);
-}
-
-void basic_window_handle_event(lak::window *window, lak::event &event)
+void basic_program_handle_event(lak::event &event)
 {
 	switch (event.type)
 	{
-		case lak::event_type::close_window:
-			ASSERT(!!window);
-			basic_destroy_window(*window);
-			break;
-
 		case lak::event_type::quit_program:
-			// Need to rework this, causes a crash.
-			// ASSERT(!!basic_single_window_window);
-			// basic_destroy_window(*basic_single_window_window);
-			break;
-
-		case lak::event_type::dropfile:
-			load_binary_async(lak::fs::path(event.dropfile().path));
+			basic_window_destroy_queue.emplace_back(wnd_ptr.get().get());
 			break;
 
 		default:
@@ -1299,21 +1343,10 @@ void basic_window_handle_event(lak::window *window, lak::event &event)
 	}
 }
 
-void basic_window_loop(lak::window &window, uint64_t counter_delta)
+bool basic_program_loop(uint64_t) { return !basic_window_instances().empty(); }
+
+int basic_program_quit()
 {
-	const float frame_time = (float)counter_delta / lak::performance_frequency();
-
-	main_window::draw(frame_time);
-
-	if (binary_update)
-	{
-		window.set_title(L"" APP_NAME " (" + binary_path.generic_wstring() + L")");
-		binary_update = false;
-	}
-}
-
-void basic_window_quit(lak::window &)
-{
-	lraw.reset();
-	reset_textures();
+	wnd_ptr.reset();
+	return EXIT_SUCCESS;
 }

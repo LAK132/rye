@@ -4,21 +4,9 @@
 #include <lak/imgui/widgets.hpp>
 #include <lak/softrender/texture.hpp>
 
-using rye_texture =
-  lak::variant<lak::monostate, lak::opengl::texture, texture_color32_t>;
+void rye_image_view(ImTextureRef texture, float *scale);
 
-rye_texture rye_create_texture(const lak::image4_t &bitmap,
-                               const lak::graphics_mode mode);
-
-rye_texture rye_create_texture(const lak::image<lak::vec3f_t> &bitmap,
-                               const lak::graphics_mode mode);
-
-rye_texture rye_create_texture(const lak::image<float> &bitmap,
-                               const lak::graphics_mode mode);
-
-void rye_image_view(const rye_texture &texture, float *scale);
-
-void rye_image_view(const rye_texture &texture, const float scale);
+void rye_image_view(ImTextureRef texture, const float scale);
 
 inline auto rye_desqueeze_sampler(const lak::image<lak::vec3f_t> &src,
                                   lak::vec2s_t dst_size)
