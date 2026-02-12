@@ -28,8 +28,6 @@
 
 #include <unordered_map>
 
-int opengl_major, opengl_minor;
-lak::graphics_mode graphics_mode;
 bool force_only_error = false;
 
 lak::fs::path binary_path;
@@ -685,8 +683,6 @@ struct main_window : lak::basic_window<main_window>
 
 	static lak::span<byte_t> file_data() { return lak::span(binary); }
 
-	static lak::graphics_mode graphics_mode() { return ::graphics_mode; }
-
 	static bool update() { return binary_update || raw_update; }
 
 	static void file_menu()
@@ -1186,6 +1182,8 @@ struct rye_window : virtual public basic_window_api
 {
 	rye_window() : basic_window_api() {}
 
+	const lak::cobalt::graphics_context *gc;
+
 	virtual ~rye_window()
 	{
 		lraw.reset();
@@ -1199,24 +1197,14 @@ struct rye_window : virtual public basic_window_api
 
 		lak::debugger.live_output_enabled = true;
 
-		graphics_mode = window().graphics();
+		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
+		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
+		ASSERT(!!gc);
 
-		DEBUG("Graphics: ", graphics_mode);
+		auto graphics_string = lak::fmt<"{} {}">(gc->api_family, gc->api_version);
+		DEBUG("Graphics: ", graphics_string);
 		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
-			std::cout << "Graphics: " << graphics_mode << "\n";
-
-		switch (graphics_mode)
-		{
-			case lak::graphics_mode::OpenGL:
-			{
-				opengl_major = lak::opengl::get_uint(GL_MAJOR_VERSION).UNWRAP();
-				opengl_minor = lak::opengl::get_uint(GL_MINOR_VERSION).UNWRAP();
-			}
-			break;
-
-			default:
-				break;
-		}
+			std::cout << "Graphics: " << graphics_string << "\n";
 
 		window().set_title(L"" APP_NAME);
 	}
@@ -1304,13 +1292,15 @@ lak::weak_ptr<basic_window_instance<rye_window>> wnd_ptr;
 
 lak::error_code<int> basic_program_init()
 {
-	basic_window_target_framerate                = 30;
-	basic_window_opengl_settings.major           = 3;
-	basic_window_opengl_settings.minor           = 2;
-	basic_window_opengl_settings.double_buffered = true;
+	basic_window_target_framerate = 30;
+
+	basic_window_cobalt_settings.depth_mode = cobalt::graphics::IFrameBuffer::
+	  WindowDepthStencilMode::DepthUNorm24StencilUInt8;
+	basic_window_cobalt_settings.colour_mode =
+	  cobalt::graphics::IFrameBuffer::WindowColorSpaceMode::Default;
 
 	wnd_ptr =
-	  basic_create_window<rye_window>(basic_window_opengl_settings).UNWRAP();
+	  basic_create_window<rye_window>(basic_window_cobalt_settings).UNWRAP();
 
 	{
 		auto window = wnd_ptr.get();

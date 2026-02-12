@@ -7,11 +7,7 @@ rye_lib = static_library(
 	[
 		'rye.cpp',
 	],
-	override_options: [
-		'cpp_std=' + version,
-		'warning_level=3',
-		'werror=true',
-	],
+	override_options: lak_subprj.get_variable('override_options_w2'),
 	include_directories: [
 		'.',
 		'../include',

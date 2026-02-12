@@ -68,12 +68,13 @@ jobs:
           echo "CC=$(brew --prefix llvm@15)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@15)/bin/clang++" >> $GITHUB_ENV
 
-      - run: meson setup build --buildtype debugoptimized
+      - run: meson setup build --buildtype release
       - run: meson compile -C build rye
 
       - if: startsWith(matrix.os, 'windows')
         run: |
-          Compress-Archive -Path build\rye.exe, build\rye.pdb -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+          meson install -C build --destdir "$pwd\install"
+          Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
       # - if: startsWith(matrix.os, 'ubuntu')
       #   run: make .deb and .zip
       # - if: startsWith(matrix.os, 'macos')

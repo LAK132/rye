@@ -7,6 +7,7 @@ ignore/*
 test/*
 release/*
 build/*
+install/*
 
 imgui.ini
 *.exe
