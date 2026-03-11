@@ -1126,6 +1126,8 @@ THE SOFTWARE.)");
 				                     lak::span<lak::vec3f_t> data,
 				                     ImVec2 size = ImVec2(0, 0))
 				{
+					ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+					                      ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
 					ImGui::PlotHistogram(
 					  ("R" + label).c_str(),
 					  [](void *d, int idx) -> float
@@ -1137,6 +1139,9 @@ THE SOFTWARE.)");
 					  FLT_MAX,
 					  FLT_MAX,
 					  size);
+					ImGui::PopStyleColor();
+					ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+					                      ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
 					ImGui::PlotHistogram(
 					  ("G" + label).c_str(),
 					  [](void *d, int idx) -> float
@@ -1148,6 +1153,9 @@ THE SOFTWARE.)");
 					  FLT_MAX,
 					  FLT_MAX,
 					  size);
+					ImGui::PopStyleColor();
+					ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+					                      ImVec4(0.3f, 0.3f, 1.0f, 1.0f));
 					ImGui::PlotHistogram(
 					  ("B" + label).c_str(),
 					  [](void *d, int idx) -> float
@@ -1159,6 +1167,7 @@ THE SOFTWARE.)");
 					  FLT_MAX,
 					  FLT_MAX,
 					  size);
+					ImGui::PopStyleColor();
 				};
 
 				lak::VertSplitter(left_size, right_size, content_size.x);
