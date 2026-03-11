@@ -641,10 +641,10 @@ struct main_window : lak::basic_window<main_window>
 {
 	using super_window = lak::basic_window<main_window>;
 
-	static void open_file(const lak::fs::path &path) { load_binary_async(path); }
+	void open_file(const lak::fs::path &path) { load_binary_async(path); }
 
-	static void save_png_file(const lak::fs::path &path,
-	                          const lak::image<lak::vec3f_t> &img)
+	void save_png_file(const lak::fs::path &path,
+	                   const lak::image<lak::vec3f_t> &img)
 	{
 		lak::image3_t processedimg;
 		processedimg.resize(img.size());
@@ -684,7 +684,7 @@ struct main_window : lak::basic_window<main_window>
 		  int(processedimg.contig_size_bytes() / processedimg.size().y));
 	}
 
-	static void save_dng_file(const lak::fs::path &path)
+	void save_dng_file(const lak::fs::path &path)
 	{
 		lak::binary_array_writer strm;
 
@@ -808,16 +808,17 @@ struct main_window : lak::basic_window<main_window>
 		lak::save_file(path, strm.data);
 	}
 
-	static const lak::fs::path &file_path() { return binary_path; }
+	const lak::fs::path &file_path() { return binary_path; }
 
-	static lak::span<byte_t> file_data() { return lak::span(binary); }
+	lak::span<byte_t> file_data() { return lak::span(binary); }
 
-	static bool update() { return binary_update || raw_update; }
+	bool update() { return binary_update || raw_update; }
 
-	static void file_menu()
+	lak::path_getter open_pgetter, save_png_pgetter, save_dng_pgetter;
+	bool save_srgb_png = false;
+
+	void file_menu()
 	{
-		static lak::path_getter open_pgetter, save_png_pgetter, save_dng_pgetter;
-		static bool save_srgb_png = false;
 		if (auto res = open_pgetter(); res) open_file(*res);
 		if (auto res = save_png_pgetter(); res)
 			save_png_file(*res, save_srgb_png ? lrsrgbimg : lrdimg);
@@ -874,7 +875,7 @@ struct main_window : lak::basic_window<main_window>
 		}
 	}
 
-	static void credits()
+	void credits()
 	{
 		LAK_TREE_NODE("Credits")
 		{
@@ -971,7 +972,7 @@ THE SOFTWARE.)");
 		}
 	}
 
-	static void about_menu(float frame_time)
+	void about_menu(float frame_time)
 	{
 		if (ImGui::BeginMenu("About"))
 		{
@@ -984,7 +985,7 @@ THE SOFTWARE.)");
 		}
 	}
 
-	static void menu_bar(float frame_time)
+	void menu_bar(float frame_time)
 	{
 		file_menu();
 		about_menu(frame_time);
@@ -994,16 +995,34 @@ THE SOFTWARE.)");
 		                &use_database_aero_match);
 	}
 
-	static void main_region(float frame_time)
-	{
-		static int lraw_white_level = UINT16_MAX;
-		static rye_ir_balance ir_balance;
+	int lraw_white_level = UINT16_MAX;
+	rye_ir_balance ir_balance;
+	float time_acc      = 0.0f;
+	float lraw_contrast = 1.f;
+	float colour_temp   = 5500;
+	float exposure      = 0.f;
+	float lightness     = 0.f;
+	float contrast      = 0.f;
+	float saturation    = 0.f;
+	bool anamorphic     = false;
+	float desqueeze     = 1.f;
 
+	float left_size  = -1.f;
+	float right_size = -1.f;
+
+	float lrawtex_size     = 0.5f;
+	float lrawptex_size    = 0.5f;
+	float lrawwtex_size    = 1.f;
+	float lraww2tex_size   = 1.f;
+	float lrawdtex_size    = 1.f;
+	float lrawsrgbtex_size = 1.f;
+
+	void main_region(float frame_time)
+	{
 		if (binary_load)
 		{
 			ImGui::BeginChild(
 			  "Mid", {-1, -1}, true, ImGuiWindowFlags_NoSavedSettings);
-			static float time_acc = 0.0f;
 			time_acc += frame_time;
 			if (time_acc > 3.0f) time_acc -= std::trunc(time_acc);
 			if (time_acc > 2.0f)
@@ -1060,15 +1079,6 @@ THE SOFTWARE.)");
 		}
 		else
 		{
-			static float lraw_contrast = 1.f;
-			static float colour_temp   = 5500;
-			static float exposure      = 0.f;
-			static float lightness     = 0.f;
-			static float contrast      = 0.f;
-			static float saturation    = 0.f;
-			static bool anamorphic     = false;
-			static float desqueeze     = 1.f;
-
 			if (image_process && image_process->has_value())
 			{
 				image_process.reset();
@@ -1101,8 +1111,11 @@ THE SOFTWARE.)");
 			{
 				const auto content_size{ImGui::GetContentRegionAvail()};
 
-				static float left_size  = std::min<float>(content_size.x / 2, 500.f);
-				static float right_size = content_size.x - left_size;
+				if (left_size <= 0.f || right_size <= 0.f)
+				{
+					left_size  = std::min<float>(content_size.x / 2, 500.f);
+					right_size = content_size.x - left_size;
+				}
 
 				auto draw_histo = [](const lak::astring &label,
 				                     lak::span<lak::vec3f_t> data,
@@ -1264,35 +1277,26 @@ THE SOFTWARE.)");
 				                  {right_size, -1},
 				                  true,
 				                  ImGuiWindowFlags_NoSavedSettings);
-				LAK_TREE_NODE("RAW")
-				{
-					static float lraw_size = 0.5f;
-					rye_image_view(lrawtex, &lraw_size);
-				}
+				LAK_TREE_NODE("RAW") { rye_image_view(lrawtex, &lrawtex_size); }
 				LAK_TREE_NODE("PROC RAW")
 				{
-					static float lraw_size = 0.5f;
-					rye_image_view(lrprocessedtex, &lraw_size);
+					rye_image_view(lrprocessedtex, &lrawptex_size);
 				}
 				LAK_TREE_NODE("IR BALANCE WAVEFORM")
 				{
-					static float lraw_size = 1.0f;
-					rye_image_view(lrwavetex, &lraw_size);
+					rye_image_view(lrwavetex, &lrawwtex_size);
 				}
 				LAK_TREE_NODE("WHITE BALANCE WAVEFORM")
 				{
-					static float lraw_size = 1.0f;
-					rye_image_view(lrwave2tex, &lraw_size);
+					rye_image_view(lrwave2tex, &lraww2tex_size);
 				}
 				LAK_TREE_NODE("DEBAYER")
 				{
-					static float lraw_size = 1.0f;
-					rye_image_view(lrdebayertex, &lraw_size);
+					rye_image_view(lrdebayertex, &lrawdtex_size);
 				}
 				// LAK_TREE_NODE("sRGB")
 				{
-					static float lraw_size = 1.0f;
-					rye_image_view(lrsrgbtex, &lraw_size);
+					rye_image_view(lrsrgbtex, &lrawsrgbtex_size);
 				}
 				ImGui::EndChild();
 			}
@@ -1352,12 +1356,14 @@ struct rye_window : virtual public basic_window_api
 		}
 	}
 
+	main_window mwnd;
+
 	virtual void loop(uint64_t counter_delta) override final
 	{
 		const float frame_time =
 		  (float)counter_delta / lak::performance_frequency();
 
-		main_window::draw(frame_time);
+		mwnd.draw(frame_time);
 
 		if (binary_update)
 		{
