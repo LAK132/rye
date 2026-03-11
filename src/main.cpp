@@ -1414,30 +1414,30 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 	return lak::ok_t{};
 }
 
-lak::weak_ptr<basic_window_instance<rye_window>> wnd_ptr;
+lak::weak_ptr<basic_window_instance<rye_window>> rye_wnd;
 
 lak::error_code<int> basic_program_init()
 {
 	basic_window_target_framerate = 30;
 
-#ifdef asd
+#ifdef LAK_ENABLE_COBALT
 	basic_window_cobalt_settings.depth_mode = cobalt::graphics::IFrameBuffer::
 	  WindowDepthStencilMode::DepthUNorm24StencilUInt8;
 	basic_window_cobalt_settings.colour_mode =
 	  cobalt::graphics::IFrameBuffer::WindowColorSpaceMode::Default;
 
-	wnd_ptr =
+	rye_wnd =
 	  basic_create_window<rye_window>(basic_window_cobalt_settings).UNWRAP();
 #else
 	basic_window_opengl_settings.depth_size  = 24U;
 	basic_window_opengl_settings.colour_size = 8U;
 
-	wnd_ptr =
+	rye_wnd =
 	  basic_create_window<rye_window>(basic_window_opengl_settings).UNWRAP();
 #endif
 
 	{
-		auto window = wnd_ptr.get();
+		auto window = rye_wnd.get();
 
 		ASSERT(!!window);
 
@@ -1459,7 +1459,7 @@ void basic_program_handle_event(lak::event &event)
 	switch (event.type)
 	{
 		case lak::event_type::quit_program:
-			basic_window_destroy_queue.emplace_back(wnd_ptr.get().get());
+			basic_window_destroy_queue.emplace_back(rye_wnd.get().get());
 			break;
 
 		default:
@@ -1471,6 +1471,6 @@ bool basic_program_loop(uint64_t) { return !basic_window_instances().empty(); }
 
 int basic_program_quit()
 {
-	wnd_ptr.reset();
+	rye_wnd.reset();
 	return EXIT_SUCCESS;
 }
