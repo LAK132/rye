@@ -10,10 +10,14 @@ lua*/**
 stb/**
 *-wrap/**
 
+Cobalt*.wrap
 glm*.wrap
+ImFileDialog*.wrap
 imgui*.wrap
 lmdb*.wrap
 lua*.wrap
 SDL2*.wrap
 stb*.wrap
 *-wrap.wrap
+
+.wraplock

@@ -3,6 +3,7 @@
 #include "main.hpp"
 #include "rye.hpp"
 
+#include <lak/format.hpp>
 #include <lak/future.hpp>
 #include <lak/strconv.hpp>
 #include <lak/system/file.hpp>
@@ -11,10 +12,11 @@
 
 #include <lak/structure/tiff.hpp>
 
-#include <lak/system/opengl/state.hpp>
-
 #include <lak/string_literals/span.hpp>
 #include <lak/string_literals/string.hpp>
+#include <lak/string_literals/view.hpp>
+
+#include <lak/imgui/widgets.hpp>
 
 #include <stb_image_write.h>
 
@@ -35,11 +37,14 @@ lak::optional<lak::future<void>> binary_load, image_process;
 lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
-ImTextureRef lrawtex, lrdebayertex, lrsrgbtex, lrwavetex, lrwave2tex;
+int last_white_level = -1;
+ImTextureRef lrawtex, lrdebayertex, lrprocessedtex, lrsrgbtex, lrwavetex,
+  lrwave2tex;
 
 void reset_textures()
 {
 	lak::DestroyTexture(lrawtex);
+	lak::DestroyTexture(lrprocessedtex);
 	lak::DestroyTexture(lrdebayertex);
 	lak::DestroyTexture(lrsrgbtex);
 	lak::DestroyTexture(lrwavetex);
@@ -47,10 +52,32 @@ void reset_textures()
 }
 
 lak::optional<LibRaw> lraw;
-lak::image<lak::vec3f_t> lrawimg, lrdimg, lrsrgbimg, lrwaveimg, lrwave2img;
+lak::image<lak::vec3f_t> lrawimg, lrdimg, lrpimg, lrsrgbimg, lrwaveimg,
+  lrwave2img;
+uint16_t out_colour_temp;
 
 lak::array<lak::vec3f_t> _ir_histo, ir_histo, _white_histo, white_histo,
   _srgb_histo, srgb_histo;
+
+enum struct sensor_format_t
+{
+	bayer,
+	xtrans,
+	foveon,
+};
+
+sensor_format_t get_sensor_format(LibRaw &lr)
+{
+	if (lr.imgdata.idata.is_foveon)
+		return sensor_format_t::foveon;
+	else if (lr.imgdata.idata.filters == 9U)
+		return sensor_format_t::xtrans;
+	// else if (lr.imgdata.idata.maker_index == LIBRAW_CAMERAMAKER_Minolta &&
+	//          lak::astring_view(lr.imgdata.idata.model) == "RD175"_view)
+	// 	return sensor_format_t::rd175;
+	else
+		return sensor_format_t::bayer;
+}
 
 bool use_database_ir_balance = true;
 bool use_database_aero_match = true;
@@ -157,53 +184,47 @@ void load_binary_async(const lak::fs::path &path)
 	binary_load = lak::async(load_binary, path);
 }
 
-void process_image(int white_level,
-                   rye_ir_balance ir_balance,
-                   float colour_temp,
-                   float exposure,
-                   float lightness,
-                   float contrast,
-                   float saturation,
-                   lak::optional<float> desqueeze)
+void process_image_white_level(lak::tasks &tasks,
+                               lak::image<lak::vec3f_t> &img,
+                               int white_level)
 {
-	if (white_level < 0) white_level = 0;
-	if (static_cast<unsigned int>(white_level) > lraw->imgdata.color.maximum)
-		white_level = lraw->imgdata.color.maximum;
+	last_white_level = white_level;
 
-	bool is_foveon = lraw->imgdata.idata.is_foveon;
-	bool is_xtrans = lraw->imgdata.idata.filters == 9U;
+	auto format = get_sensor_format(*lraw);
 
-	if (is_foveon) white_level = (1U << 14U) - 1U;
+	white_level = static_cast<int>(std::max<unsigned int>(
+	  0,
+	  std::min<unsigned int>(lraw->imgdata.color.maximum,
+	                         static_cast<unsigned int>(white_level))));
 
-	auto wb_wv = rye_relative_blackbody(colour_temp);
+	if (format == sensor_format_t::foveon) white_level = (1U << 14U) - 1U;
 
-	auto wb = [](lak::vec3f_t point) -> lak::vec3f_t
-	{
-		float mid = (rye_vec_max(point) + rye_vec_min(point)) / 2.f;
-		return {mid / point.r, mid / point.g, mid / point.b};
-	};
-
-	lrawimg.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
-
-	lak::tasks tasks{lak::tasks::hardware_max()};
+	img.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
 
 	// convert raw to float and apply white level adjustment
-	for (size_t y = 0; y < lrawimg.size().y; ++y)
+	for (size_t y = 0; y < img.size().y; ++y)
 	{
 		tasks.push(
-		  [&, iy = y * lrawimg.size().x]()
+		  [&, iy = y * img.size().x]()
 		  {
-			  for (size_t x = 0; x < lrawimg.size().x; ++x)
+			  for (size_t x = 0; x < img.size().x; ++x)
 			  {
 				  const size_t i = iy + x;
 
-				  lrawimg[i].r = float(lraw->imgdata.image[i][0]) / white_level;
-				  lrawimg[i].g = float(lraw->imgdata.image[i][1]) / white_level;
-				  lrawimg[i].b = float(lraw->imgdata.image[i][2]) / white_level;
+				  img[i].r = float(lraw->imgdata.image[i][0]) / white_level;
+				  img[i].g = float(lraw->imgdata.image[i][1]) / white_level;
+				  img[i].b = float(lraw->imgdata.image[i][2]) / white_level;
 			  }
 		  });
 	}
 	tasks.await();
+}
+
+void process_image_demosaic(lak::tasks &tasks,
+                            const lak::image<lak::vec3f_t> &src,
+                            lak::image<lak::vec3f_t> &dst)
+{
+	auto format = get_sensor_format(*lraw);
 
 	const int flip = lraw->imgdata.sizes.flip;
 	auto flip4     = [flip](lak::vec2s_t index) -> lak::vec2s_t
@@ -220,12 +241,12 @@ void process_image(int white_level,
 	auto flip124 = [&](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
 	{ return flip12(flip4(index), size); };
 
-	lak::vec2s_t isize{lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight};
+	lak::vec2s_t isize = src.size();
 
 	// downscale demosaic
-	if (is_foveon)
+	if (format == sensor_format_t::foveon)
 	{
-		lrdimg.resize(flip4(isize));
+		dst.resize(flip4(isize));
 
 		for (size_t y = 0; y < isize.y; ++y)
 		{
@@ -234,18 +255,18 @@ void process_image(int white_level,
 			  {
 				  for (size_t x = 0; x < isize.x; ++x)
 				  {
-					  const lak::vec2s_t xy_dst = flip124({x, y}, lrdimg.size());
+					  const lak::vec2s_t xy_dst = flip124({x, y}, dst.size());
 					  const lak::vec2s_t xy_src{x, y};
-					  lrdimg[xy_dst] = lrawimg[xy_src];
+					  dst[xy_dst] = src[xy_src];
 				  }
 			  });
 		}
 	}
-	else if (is_xtrans)
+	else if (format == sensor_format_t::xtrans)
 	{
 		isize.x /= 3U;
 		isize.y /= 3U;
-		lrdimg.resize(flip4(isize));
+		dst.resize(flip4(isize));
 
 		for (size_t y = 0; y < isize.y; ++y)
 		{
@@ -256,25 +277,24 @@ void process_image(int white_level,
 				  for (size_t x = 0; x < isize.x; ++x)
 				  {
 					  const size_t x3       = x * 3;
-					  const lak::vec2s_t xy = flip124({x, y}, lrdimg.size());
+					  const lak::vec2s_t xy = flip124({x, y}, dst.size());
 
 					  const bool xtrans_even_cell = (x + y) % 2U == 0U;
 					  const size_t xtrans_off1    = xtrans_even_cell ? 0U : 1U;
 					  const size_t xtrans_off2    = xtrans_even_cell ? 1U : 0U;
 
-					  lrdimg[xy].r = (lrawimg[{x3 + 2U, y3 + xtrans_off1}].r +
-					                  lrawimg[{x3 + xtrans_off2, y3 + 2U}].r) /
-					                 2.f;
+					  dst[xy].r = (src[{x3 + 2U, y3 + xtrans_off1}].r +
+					               src[{x3 + xtrans_off2, y3 + 2U}].r) /
+					              2.f;
 
-					  lrdimg[xy].g =
-					    (lrawimg[{x3, y3}].g + lrawimg[{x3 + 1U, y3}].g +
-					     lrawimg[{x3, y3 + 1U}].g + lrawimg[{x3 + 1U, y3 + 1U}].g +
-					     lrawimg[{x3 + 2U, y3 + 2U}].g) /
+					  dst[xy].g =
+					    (src[{x3, y3}].g + src[{x3 + 1U, y3}].g + src[{x3, y3 + 1U}].g +
+					     src[{x3 + 1U, y3 + 1U}].g + src[{x3 + 2U, y3 + 2U}].g) /
 					    5.f;
 
-					  lrdimg[xy].b = (lrawimg[{x3 + 2U, y3 + xtrans_off2}].b +
-					                  lrawimg[{x3 + xtrans_off1, y3 + 2U}].b) /
-					                 2.f;
+					  dst[xy].b = (src[{x3 + 2U, y3 + xtrans_off2}].b +
+					               src[{x3 + xtrans_off1, y3 + 2U}].b) /
+					              2.f;
 				  }
 			  });
 		}
@@ -283,7 +303,7 @@ void process_image(int white_level,
 	{
 		isize.x /= 2U;
 		isize.y /= 2U;
-		lrdimg.resize(flip4(isize));
+		dst.resize(flip4(isize));
 
 		lak::vec2s_t channels[4U] = {{0U, 0U}, {0U, 0U}, {0U, 0U}, {0U, 0U}};
 		for (int y = 0; y < 2; ++y)
@@ -300,16 +320,200 @@ void process_image(int white_level,
 				  for (size_t x = 0; x < isize.x; ++x)
 				  {
 					  const size_t x2           = x * 2;
-					  const lak::vec2s_t xy_dst = flip124({x, y}, lrdimg.size());
+					  const lak::vec2s_t xy_dst = flip124({x, y}, dst.size());
 					  const lak::vec2s_t xy_src{x2, y2};
 
-					  lrdimg[xy_dst].r = lrawimg[xy_src + channels[0U]].r;
-					  lrdimg[xy_dst].g = std::max(lrawimg[xy_src + channels[1U]].g,
-					                              lrawimg[xy_src + channels[3U]].g);
-					  lrdimg[xy_dst].b = lrawimg[xy_src + channels[2U]].b;
+					  dst[xy_dst].r = src[xy_src + channels[0U]].r;
+					  dst[xy_dst].g = std::max(src[xy_src + channels[1U]].g,
+					                           src[xy_src + channels[3U]].g);
+					  dst[xy_dst].b = src[xy_src + channels[2U]].b;
 				  }
 			  });
 		}
+	}
+	tasks.await();
+}
+
+void process_image_ir_stage_1(lak::tasks &tasks,
+                              lak::image<lak::vec3f_t> &img,
+                              lak::vec3f_t ir_in)
+{
+	auto format = get_sensor_format(*lraw);
+
+	if (format == sensor_format_t::foveon)
+	{
+		const lak::mat3f_t ir_channel_swap{lak::vec3{
+		  lak::vec3f_t{0.f, 0.f, 1.f / ir_in.b},
+		  lak::vec3f_t{1.f, 0.f, -ir_in.r / ir_in.b},
+		  lak::vec3f_t{0.f, 1.f, -ir_in.g / ir_in.b},
+		}};
+
+		for (size_t y = 0; y < img.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  for (size_t x = 0; x < img.size().x; ++x)
+				  {
+					  img[{x, y}] *= ir_channel_swap;
+				  }
+			  });
+		}
+
+		tasks.await();
+	}
+	else
+	{
+		const float ir_in_red   = ir_in.r / ir_in.b;
+		const float ir_in_green = ir_in.g / ir_in.b;
+
+		const lak::mat3f_t ir_channel_swap{lak::vec3{
+		  lak::vec3f_t{0.f, 0.f, 1.f},
+		  lak::vec3f_t{1.f, 0.f, -ir_in.r / ir_in.b},
+		  lak::vec3f_t{0.f, 1.f, -ir_in.g / ir_in.b},
+		}};
+
+		for (size_t y = 0; y < img.size().y; ++y)
+		{
+			tasks.push(
+			  [&, y = y]()
+			  {
+				  for (size_t x = 0; x < img.size().x; ++x)
+				  {
+					  img[{x, y}] *= ir_channel_swap;
+				  }
+			  });
+		}
+
+		tasks.await();
+	}
+}
+
+void process_image_ir_stage_2(lak::tasks &tasks,
+                              lak::image<lak::vec3f_t> &img,
+                              lak::vec3f_t aero_match,
+                              float colour_temp)
+{
+	LAK_UNUSED(img);
+
+	auto wb_wv      = rye_relative_blackbody(colour_temp);
+	out_colour_temp = uint16_t(std::max<long long>(
+	  0, std::min<long long>((1U << 15U) - 1, std::llround(colour_temp))));
+
+	// camera sensitivity compensation
+	const lak::vec3f_t aero_match_balance = rye_white_balance(
+	  {1.f / aero_match.r, 1.f / aero_match.g, 1.f / aero_match.b});
+
+	// blackbody whitebalance
+	const lak::vec3f_t temp_sensitivity{
+	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
+	const lak::vec3f_t temp_balance = rye_white_balance(temp_sensitivity);
+
+	// aerochrome sensitivity factor
+	const lak::vec3f_t aerochrome_sensitivity{
+	  std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
+	const lak::vec3f_t aero_balance = rye_white_balance(aerochrome_sensitivity);
+
+	const lak::vec3f_t balance =
+	  aero_balance * aero_match_balance * temp_balance;
+
+	for (size_t y = 0; y < lrdimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < lrdimg.size().x; ++x)
+			  {
+				  lak::vec3f_t &irrgb = lrdimg[{x, y}];
+
+				  const float min = rye_vec_min<float>(irrgb);
+				  if (min < 0.0f) irrgb -= {min, min, min};
+
+				  irrgb *= balance;
+			  }
+		  });
+	}
+	tasks.await();
+}
+
+void process_image(int white_level,
+                   rye_ir_balance ir_balance,
+                   float colour_temp,
+                   float exposure,
+                   float lightness,
+                   float contrast,
+                   float saturation,
+                   lak::optional<float> desqueeze)
+{
+	lak::tasks tasks{lak::tasks::hardware_max()};
+
+	bool is_foveon                  = lraw->imgdata.idata.is_foveon;
+	[[maybe_unused]] bool is_xtrans = lraw->imgdata.idata.filters == 9U;
+
+	if (lrawimg.contig_size() == 0 || white_level != last_white_level)
+	{
+		process_image_white_level(tasks, lrawimg, white_level);
+		lrdimg.resize({0, 0});
+	}
+
+	// if (lrdimg.contig_size() == 0)
+	{
+		process_image_demosaic(tasks, lrawimg, lrdimg);
+	}
+
+	// convert to sRGB
+	if_let_some (float stretch, desqueeze)
+		lrpimg.resize(
+		  {static_cast<size_t>(static_cast<double>(lrdimg.size().x) * stretch),
+		   lrdimg.size().y});
+	else
+		lrpimg.resize(lrdimg.size());
+	for (size_t y = 0; y < lrpimg.size().y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  auto effect = [&](lak::vec3f_t p) -> lak::vec3f_t
+			  {
+				  if (is_foveon)
+				  {
+					  p *= lak::vec3f_t{
+					    lraw->imgdata.color.pre_mul[0],
+					    lraw->imgdata.color.pre_mul[1],
+					    lraw->imgdata.color.pre_mul[2],
+					  };
+
+					  lak::mat3f_t rgb_cam{lak::vec3{
+					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[0][0],
+					                 lraw->imgdata.color.rgb_cam[0][1],
+					                 lraw->imgdata.color.rgb_cam[0][2]},
+					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[1][0],
+					                 lraw->imgdata.color.rgb_cam[1][1],
+					                 lraw->imgdata.color.rgb_cam[1][2]},
+					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[2][0],
+					                 lraw->imgdata.color.rgb_cam[2][1],
+					                 lraw->imgdata.color.rgb_cam[2][2]},
+					  }};
+
+					  p *= rgb_cam;
+				  }
+
+				  p = rye_exp_correction(p, exposure, lightness, contrast, saturation);
+				  p = rye_to_srgb(p);
+				  return p;
+			  };
+			  if (desqueeze)
+			  {
+				  auto sampler = rye_desqueeze_sampler(lrdimg, lrpimg.size());
+				  for (lak::vec2s_t xy = {0, y}; xy.x < lrpimg.size().x; ++xy.x)
+					  lrpimg[xy] = effect(sampler(xy));
+			  }
+			  else
+			  {
+				  for (lak::vec2s_t xy = {0, y}; xy.x < lrpimg.size().x; ++xy.x)
+					  lrpimg[xy] = effect(lrdimg[xy]);
+			  }
+		  });
 	}
 	tasks.await();
 
@@ -364,84 +568,9 @@ void process_image(int white_level,
 		_ir_histo = rye_histogram(wavetemp);
 	}
 
-	// IR processing stage 1
-	if (is_foveon)
-	{
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < lrdimg.size().x; ++x)
-				  {
-					  const float ir   = lrdimg[{x, y}].b / ir_balance.ir_in.b;
-					  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_balance.ir_in.g * ir);
-					  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_balance.ir_in.r * ir);
-					  lrdimg[{x, y}].r = ir;
-				  }
-			  });
-		}
+	process_image_ir_stage_1(tasks, lrdimg, ir_balance.ir_in);
 
-		tasks.await();
-	}
-	else
-	{
-		const float ir_in_red   = ir_balance.ir_in.r / ir_balance.ir_in.b;
-		const float ir_in_green = ir_balance.ir_in.g / ir_balance.ir_in.b;
-		for (size_t y = 0; y < lrdimg.size().y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < lrdimg.size().x; ++x)
-				  {
-					  const float ir   = lrdimg[{x, y}].b;
-					  lrdimg[{x, y}].b = lrdimg[{x, y}].g - (ir_in_green * ir);
-					  lrdimg[{x, y}].g = lrdimg[{x, y}].r - (ir_in_red * ir);
-					  lrdimg[{x, y}].r = ir;
-				  }
-			  });
-		}
-
-		tasks.await();
-	}
-
-	// aerochrome sensitivity factor
-	const lak::vec3f_t aerochrome_sensitivity{
-	  std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
-	const lak::vec3f_t aero_balance = wb(aerochrome_sensitivity);
-
-	// camera sensitivity compensation
-	const lak::vec3f_t aero_match_balance = wb({1.f / ir_balance.aero_match.b,
-	                                            1.f / ir_balance.aero_match.r,
-	                                            1.f / ir_balance.aero_match.g});
-
-	// blackbody whitebalance
-	const lak::vec3f_t temp_sensitivity{
-	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
-	const lak::vec3f_t temp_balance = wb(temp_sensitivity);
-
-	const lak::vec3f_t balance =
-	  aero_balance * aero_match_balance * temp_balance;
-
-	// IR processing stage 2
-	for (size_t y = 0; y < lrdimg.size().y; ++y)
-	{
-		tasks.push(
-		  [&, y = y]()
-		  {
-			  for (size_t x = 0; x < lrdimg.size().x; ++x)
-			  {
-				  lak::vec3f_t &irrgb = lrdimg[{x, y}];
-
-				  const float min = rye_vec_min<float>(irrgb);
-				  if (min < 0.0f) irrgb -= {min, min, min};
-
-				  irrgb *= balance;
-			  }
-		  });
-	}
-	tasks.await();
+	process_image_ir_stage_2(tasks, lrdimg, ir_balance.aero_match, colour_temp);
 
 	// generate white balance histogram and waveform
 	lrwave2img   = rye_waveform(lrdimg);
@@ -847,19 +976,6 @@ THE SOFTWARE.)");
 		if (ImGui::BeginMenu("About"))
 		{
 			ImGui::Text(APP_NAME " by LAK132");
-			switch (::graphics_mode)
-			{
-				case lak::graphics_mode::OpenGL:
-					ImGui::Text("Using OpenGL %d.%d", opengl_major, opengl_minor);
-					break;
-
-				case lak::graphics_mode::Software:
-					ImGui::Text("Using Softraster");
-					break;
-
-				default:
-					break;
-			}
 			ImGui::Text("Frame rate %f", std::round(1.0f / frame_time));
 			ImGui::Text("Perf Freq  0x%016" PRIX64, lak::performance_frequency());
 			ImGui::Text("Perf Count 0x%016" PRIX64, lak::performance_counter());
@@ -956,14 +1072,15 @@ THE SOFTWARE.)");
 			if (image_process && image_process->has_value())
 			{
 				image_process.reset();
-				ir_histo     = lak::move(_ir_histo);
-				white_histo  = lak::move(_white_histo);
-				srgb_histo   = lak::move(_srgb_histo);
-				lrawtex      = lak::CreateTexture(lrawimg);
-				lrdebayertex = lak::CreateTexture(lrdimg);
-				lrsrgbtex    = lak::CreateTexture(lrsrgbimg);
-				lrwavetex    = lak::CreateTexture(lrwaveimg);
-				lrwave2tex   = lak::CreateTexture(lrwave2img);
+				ir_histo       = lak::move(_ir_histo);
+				white_histo    = lak::move(_white_histo);
+				srgb_histo     = lak::move(_srgb_histo);
+				lrawtex        = lak::CreateTexture(lrawimg);
+				lrprocessedtex = lak::CreateTexture(lrpimg);
+				lrdebayertex   = lak::CreateTexture(lrdimg);
+				lrsrgbtex      = lak::CreateTexture(lrsrgbimg);
+				lrwavetex      = lak::CreateTexture(lrwaveimg);
+				lrwave2tex     = lak::CreateTexture(lrwave2img);
 			}
 
 			if (raw_update && !image_process)
@@ -1152,6 +1269,11 @@ THE SOFTWARE.)");
 					static float lraw_size = 0.5f;
 					rye_image_view(lrawtex, &lraw_size);
 				}
+				LAK_TREE_NODE("PROC RAW")
+				{
+					static float lraw_size = 0.5f;
+					rye_image_view(lrprocessedtex, &lraw_size);
+				}
 				LAK_TREE_NODE("IR BALANCE WAVEFORM")
 				{
 					static float lraw_size = 1.0f;
@@ -1182,7 +1304,9 @@ struct rye_window : virtual public basic_window_api
 {
 	rye_window() : basic_window_api() {}
 
+#ifdef LAK_ENABLE_COBALT
 	const lak::cobalt::graphics_context *gc;
+#endif
 
 	virtual ~rye_window()
 	{
@@ -1197,6 +1321,7 @@ struct rye_window : virtual public basic_window_api
 
 		lak::debugger.live_output_enabled = true;
 
+#ifdef LAK_ENABLE_COBALT
 		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
 		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
 		ASSERT(!!gc);
@@ -1205,6 +1330,7 @@ struct rye_window : virtual public basic_window_api
 		DEBUG("Graphics: ", graphics_string);
 		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
 			std::cout << "Graphics: " << graphics_string << "\n";
+#endif
 
 		window().set_title(L"" APP_NAME);
 	}
@@ -1294,6 +1420,7 @@ lak::error_code<int> basic_program_init()
 {
 	basic_window_target_framerate = 30;
 
+#ifdef asd
 	basic_window_cobalt_settings.depth_mode = cobalt::graphics::IFrameBuffer::
 	  WindowDepthStencilMode::DepthUNorm24StencilUInt8;
 	basic_window_cobalt_settings.colour_mode =
@@ -1301,6 +1428,13 @@ lak::error_code<int> basic_program_init()
 
 	wnd_ptr =
 	  basic_create_window<rye_window>(basic_window_cobalt_settings).UNWRAP();
+#else
+	basic_window_opengl_settings.depth_size  = 24U;
+	basic_window_opengl_settings.colour_size = 8U;
+
+	wnd_ptr =
+	  basic_create_window<rye_window>(basic_window_opengl_settings).UNWRAP();
+#endif
 
 	{
 		auto window = wnd_ptr.get();

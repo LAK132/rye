@@ -65,6 +65,8 @@ lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb);
 
 lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl);
 
+lak::vec3f_t rye_white_balance(lak::vec3f_t white_point);
+
 lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
                                 float exposure,
                                 float lightness,

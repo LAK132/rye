@@ -212,6 +212,12 @@ lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl)
 	return {transform(tr), transform(tg), transform(tb)};
 }
 
+lak::vec3f_t rye_white_balance(lak::vec3f_t white_point)
+{
+	float mid = (rye_vec_max(white_point) + rye_vec_min(white_point)) / 2.f;
+	return {mid / white_point.r, mid / white_point.g, mid / white_point.b};
+}
+
 lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
                                 float exposure,
                                 float lightness,
