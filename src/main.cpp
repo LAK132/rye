@@ -124,7 +124,7 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
   {"Nikon Z fc"_str,
    {
      .ir_in      = {1.09f, .83f, 1.f},
-     .aero_match = {.44f, .4f, 1.6f},
+     .aero_match = {.9f, .44f, 1.f},
    }},
   {"Sigma sd Quattro"_str,
    {
