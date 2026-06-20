@@ -55,7 +55,10 @@ jobs:
           echo "CC=$(brew --prefix llvm@20)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
-      - run: meson setup build --buildtype debugoptimized -Dprefix=$(pwd)/install
+      - if: startsWith(matrix.os, 'windows')
+        run: meson setup build --buildtype debugoptimized -Dprefix=$pwd\install
+      - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        run: meson setup build --buildtype debugoptimized -Dprefix=$(pwd)/install
       - run: meson compile -C build rye
       # :TODO: run tests
       - run: meson install -C build --no-rebuild --tags=runtime
