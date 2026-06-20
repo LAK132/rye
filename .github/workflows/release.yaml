@@ -87,7 +87,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: |
           cd install/bin
-          find . \( -name '*.so' -or -name '*.dylib' \) -print0 | xargs -0 tar cfz RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz rye
+          tar cfz RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz *
           ls
 
       - if: startsWith(matrix.os, 'windows')
