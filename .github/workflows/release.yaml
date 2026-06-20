@@ -65,7 +65,7 @@ jobs:
           platform: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
-          sudo python3 -m pip install --upgrade pip setuptools wheel
+          sudo python3 -m pip install --upgrade pip setuptools
           sudo python3 -m pip install meson ninja
 
       - if: startsWith(matrix.os, 'macos')
