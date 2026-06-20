@@ -16,6 +16,7 @@
 #include <lak/string_literals/string.hpp>
 #include <lak/string_literals/view.hpp>
 
+#include <lak/imgui/texture.hpp>
 #include <lak/imgui/widgets.hpp>
 
 #include <stb_image_write.h>
@@ -38,17 +39,17 @@ lak::array<byte_t> binary;
 bool binary_update = false, raw_update = false;
 
 int last_white_level = -1;
-ImTextureRef lrawtex, lrdebayertex, lrprocessedtex, lrsrgbtex, lrwavetex,
-  lrwave2tex;
+lak::ImUniqueTexture lrawtex, lrdebayertex, lrprocessedtex, lrsrgbtex,
+  lrwavetex, lrwave2tex;
 
 void reset_textures()
 {
-	lak::DestroyTexture(lrawtex);
-	lak::DestroyTexture(lrprocessedtex);
-	lak::DestroyTexture(lrdebayertex);
-	lak::DestroyTexture(lrsrgbtex);
-	lak::DestroyTexture(lrwavetex);
-	lak::DestroyTexture(lrwave2tex);
+	lrawtex.reset();
+	lrprocessedtex.reset();
+	lrdebayertex.reset();
+	lrsrgbtex.reset();
+	lrwavetex.reset();
+	lrwave2tex.reset();
 }
 
 lak::optional<LibRaw> lraw;
@@ -1087,15 +1088,15 @@ THE SOFTWARE.)");
 			if (image_process && image_process->has_value())
 			{
 				image_process.reset();
-				ir_histo       = lak::move(_ir_histo);
-				white_histo    = lak::move(_white_histo);
-				srgb_histo     = lak::move(_srgb_histo);
-				lrawtex        = lak::CreateTexture(lrawimg);
-				lrprocessedtex = lak::CreateTexture(lrpimg);
-				lrdebayertex   = lak::CreateTexture(lrdimg);
-				lrsrgbtex      = lak::CreateTexture(lrsrgbimg);
-				lrwavetex      = lak::CreateTexture(lrwaveimg);
-				lrwave2tex     = lak::CreateTexture(lrwave2img);
+				ir_histo    = lak::move(_ir_histo);
+				white_histo = lak::move(_white_histo);
+				srgb_histo  = lak::move(_srgb_histo);
+				lrawtex.emplace(lrawimg);
+				lrprocessedtex.emplace(lrpimg);
+				lrdebayertex.emplace(lrdimg);
+				lrsrgbtex.emplace(lrsrgbimg);
+				lrwavetex.emplace(lrwaveimg);
+				lrwave2tex.emplace(lrwave2img);
 			}
 
 			if (raw_update && !image_process)
