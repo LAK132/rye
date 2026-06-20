@@ -16,10 +16,9 @@ jobs:
       - run: echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
         shell: bash
         id: get_tag
-      - uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v3
         id: create_release
         with:
-          token: ${{ github.token }}
           draft: false
           prerelease: true
           name: RYE ${{ github.ref_name }}
@@ -30,8 +29,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022]
-        arch: [x86, x64]
+        os: [windows-2025, ubuntu-26.04, macos-26, macos-26-intel]
+        arch: [x64, arm64]
+        exclude:
+          - os: windows-2025
+            arch: arm64
+          - os: ubuntu-26.04
+            arch: arm64
+          - os: macos-26
+            arch: x64
+          - os: macos-26-intel
+            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -43,19 +51,15 @@ jobs:
 
       - if: startsWith(matrix.os, 'windows')
         uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
-          # toolset: 19
-          vsversion: 2022
       - if: startsWith(matrix.os, 'windows')
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install meson ninja
 
       - if: startsWith(matrix.os, 'ubuntu')
-        uses: egor-tensin/setup-gcc@v1
+        uses: egor-tensin/setup-gcc@v2
         with:
-          version: 13
+          version: latest
           platform: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -65,22 +69,30 @@ jobs:
       - if: startsWith(matrix.os, 'macos')
         run: |
           brew install meson ninja
-          echo "CC=$(brew --prefix llvm@15)/bin/clang" >> $GITHUB_ENV
-          echo "CXX=$(brew --prefix llvm@15)/bin/clang++" >> $GITHUB_ENV
+          echo "CC=$(brew --prefix llvm@20)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
       - run: meson setup build --buildtype release
       - run: meson compile -C build rye
 
       - if: startsWith(matrix.os, 'windows')
         run: |
-          meson install -C build --destdir "$pwd\install"
+          meson install -C build --destdir "$pwd\install" --no-rebuild
           Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
-      # - if: startsWith(matrix.os, 'ubuntu')
-      #   run: make .deb and .zip
-      # - if: startsWith(matrix.os, 'macos')
-      #   run: make .dmg and .zip
-      - uses: softprops/action-gh-release@v1
+
+      - if: startsWith(matrix.os, 'windows')
+      - uses: softprops/action-gh-release@v3
         with:
-          token: ${{ github.token }}
           fail_on_unmatched_files: true
           files: RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+
+      - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        run: |
+          meson install -C build --destdir "$(pwd)/install" --no-rebuild
+          tar -czf RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz install/bin/rye install/bin/*.so install/bin/*.dylib
+
+      - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+      - uses: softprops/action-gh-release@v3
+        with:
+          fail_on_unmatched_files: true
+          files: RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz
