@@ -83,7 +83,9 @@ jobs:
         run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
 
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
-        run: tar -czf RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz install/bin/rye install/bin/*.so install/bin/*.dylib
+        run: |
+          cd install/bin
+          find . \( -name '*.so' -or -name '*.dylib' \) -print0 | xargs -0 tar cfz RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz rye
 
       - if: startsWith(matrix.os, 'windows')
         uses: softprops/action-gh-release@v3
@@ -95,4 +97,4 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true
-          files: RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz
+          files: install/bin/RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz
