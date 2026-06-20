@@ -42,7 +42,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu')
         uses: egor-tensin/setup-gcc@v2
         with:
-          version: latest
+          version: 13
           platform: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
