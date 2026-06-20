@@ -55,19 +55,16 @@ jobs:
           echo "CC=$(brew --prefix llvm@20)/bin/clang" >> $GITHUB_ENV
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
-      - run: meson setup build --buildtype debugoptimized
+      - run: meson setup build --buildtype debugoptimized -Dprefix=$(pwd)/install
       - run: meson compile -C build rye
-      # - run: run tests
+      # :TODO: run tests
+      - run: meson install -C build --no-rebuild --tags=runtime
 
       - if: startsWith(matrix.os, 'windows')
-        run: |
-          meson install -C build --destdir "$pwd\install" --no-rebuild --tags=runtime
-          Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+        run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ runner.os }}-${{ matrix.arch }}.zip
 
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
-        run: |
-          meson install -C build --destdir "$(pwd)/install" --no-rebuild --tags=runtime
-          tar -czf RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz install/bin/rye install/bin/*.so install/bin/*.dylib
+        run: tar -czf RYE-${{ runner.os }}-${{ matrix.arch }}.tar.gz install/bin/rye install/bin/*.so install/bin/*.dylib
 
   push-staging:
     needs: run-tests
