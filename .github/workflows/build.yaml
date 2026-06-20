@@ -33,7 +33,7 @@ jobs:
           python-version: '3.11'
 
       - if: startsWith(matrix.os, 'windows')
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
       - if: startsWith(matrix.os, 'windows')
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
@@ -56,9 +56,9 @@ jobs:
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
       - if: startsWith(matrix.os, 'windows')
-        run: meson setup build --buildtype debugoptimized -Dprefix=$pwd\install
+        run: meson setup build --buildtype debugoptimized -Dprefix="$pwd\install"
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
-        run: meson setup build --buildtype debugoptimized -Dprefix=$(pwd)/install
+        run: meson setup build --buildtype debugoptimized -Dprefix="$(pwd)/install"
       - run: meson compile -C build rye
       # :TODO: run tests
       - run: meson install -C build --no-rebuild --tags=runtime
