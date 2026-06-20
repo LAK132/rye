@@ -1,8 +1,10 @@
 @echo off
 SetLocal EnableDelayedExpansion
 
+set meson_args=
+
 if "%~1"=="msvc" (
-  set meson_args=--vsenv
+  set meson_args=!meson_args! --vsenv
   goto run
 )
 
@@ -37,10 +39,10 @@ meson setup build !meson_args!
 goto :eof
 
 :usage
-echo setup.bat [compiler] ^<setup args^>
+echo setup.bat ^<cross target^> [native compiler] ^<setup args^>
 echo examples:
 echo setup.bat msvc
 echo setup.bat msvc --buildtype release
 echo setup.bat gcc --buildtype debug
 echo setup.bat clang --buildtype debugoptimized
-goto :eof
+exit /b 1

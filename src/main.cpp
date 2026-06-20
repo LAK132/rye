@@ -1,5 +1,3 @@
-#define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
-
 #include "main.hpp"
 #include "rye.hpp"
 
@@ -10,7 +8,7 @@
 #include <lak/tasks.hpp>
 #include <lak/test.hpp>
 
-#include <lak/structure/tiff.hpp>
+#include <lak/file/tiff.hpp>
 
 #include <lak/string_literals/span.hpp>
 #include <lak/string_literals/string.hpp>
@@ -157,7 +155,7 @@ lak::error_code<LibRaw_errors> libraw_as_result(int code)
 		return lak::err_t{static_cast<LibRaw_errors>(code)};
 }
 
-lak::error_codes<lak::errno_error, LibRaw_errors> load_binary_ex(
+lak::error_codes<std::error_code, LibRaw_errors> load_binary_ex(
   lak::fs::path path)
 {
 	RES_TRY_ASSIGN(binary =, lak::read_file(path));
@@ -267,6 +265,8 @@ void process_image_demosaic(lak::tasks &tasks,
 				  }
 			  });
 		}
+
+		tasks.await();
 	}
 	else if (format == sensor_format_t::xtrans)
 	{
@@ -304,6 +304,8 @@ void process_image_demosaic(lak::tasks &tasks,
 				  }
 			  });
 		}
+
+		tasks.await();
 	}
 	else
 	{
@@ -336,8 +338,9 @@ void process_image_demosaic(lak::tasks &tasks,
 				  }
 			  });
 		}
+
+		tasks.await();
 	}
-	tasks.await();
 }
 
 void process_image_ir_stage_1(lak::tasks &tasks,
@@ -1407,16 +1410,20 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 		{
 			std::cout << "rye.exe "
 			             "[--help] "
+#ifdef LAK_ENABLE_SOFTRENDER
 			             "[--nogl] "
+#endif
 			             "[--onlyerr] "
 			             "[<filepath>]\n";
 
 			return lak::err_t{EXIT_SUCCESS};
 		}
+#ifdef LAK_ENABLE_SOFTRENDER
 		else if (args[arg] == lak::astring("--nogl"))
 		{
 			basic_window_force_software = true;
 		}
+#endif
 		else if (args[arg] == lak::astring("--onlyerr"))
 		{
 			force_only_error = true;
@@ -1480,7 +1487,7 @@ void basic_program_handle_event(lak::event &event)
 	switch (event.type)
 	{
 		case lak::event_type::quit_program:
-			basic_window_destroy_queue.emplace_back(rye_wnd.get().get());
+			rye_wnd.get()->destroy();
 			break;
 
 		default:

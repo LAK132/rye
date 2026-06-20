@@ -3,6 +3,12 @@ project(
 	'cpp',
 	license: 'CDDL-1.0 OR LGPL-2.1-only',
 	license_files: ['LICENSE.CDDL', 'LICENSE.LGPL'],
+	default_options: {
+		'c_std': 'c11',
+		'cpp_std': 'c++14',
+		'warning_level': '0',
+		'werror': false,
+	},
 )
 
 cxx = meson.get_compiler('cpp')

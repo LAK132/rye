@@ -1,8 +1,4 @@
 includes = include_directories('..')
-override_options = [
-	'warning_level=0',
-	'werror=false',
-]
 
 libraw_decoders = static_library(
 	'libraw-decoders',
@@ -25,7 +21,6 @@ libraw_decoders = static_library(
 		'decoders'/'unpack_thumb.cpp',
 		'decoders'/'unpack.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -34,7 +29,6 @@ libraw_decompressors = static_library(
 	[
 		'decompressors'/'losslessjpeg.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -48,7 +42,6 @@ libraw_demosaic = static_library(
 		'demosaic'/'misc_demosaic.cpp',
 		'demosaic'/'xtrans_demosaic.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -58,7 +51,6 @@ libraw_integration = static_library(
 		'integration'/'dngsdk_glue.cpp',
 		'integration'/'rawspeed_glue.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -90,7 +82,6 @@ libraw_metadata = static_library(
 		'metadata'/'sony.cpp',
 		'metadata'/'tiff.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -105,7 +96,6 @@ libraw_postprocessing = static_library(
 		'postprocessing'/'postprocessing_utils_dcrdefs.cpp',
 		'postprocessing'/'postprocessing_utils.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -117,7 +107,6 @@ libraw_preprocessing = static_library(
 		'preprocessing'/'raw2image.cpp',
 		'preprocessing'/'subtract_black.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -129,7 +118,6 @@ libraw_tables = static_library(
 		'tables'/'colordata.cpp',
 		'tables'/'wblists.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -146,7 +134,6 @@ libraw_utils = static_library(
 		'utils'/'utils_dcraw.cpp',
 		'utils'/'utils_libraw.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -158,7 +145,6 @@ libraw_write = static_library(
 		'write'/'tiff_writer.cpp',
 		# 'write'/'write_ph.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -168,7 +154,6 @@ libraw_x3f = static_library(
 		'x3f'/'x3f_parse_process.cpp',
 		'x3f'/'x3f_utils_patched.cpp',
 	],
-	override_options: override_options,
 	include_directories: includes,
 )
 
@@ -192,7 +177,6 @@ if get_option('libraw_static_library')
 			libraw_write,
 			libraw_x3f,
 		],
-		override_options: override_options,
 		include_directories: includes,
 	)
 else
@@ -215,7 +199,6 @@ else
 			libraw_write,
 			libraw_x3f,
 		],
-		override_options: override_options,
 		include_directories: includes,
 	)
 endif
@@ -224,4 +207,5 @@ libraw_dep = declare_dependency(
 	link_with: libraw,
 	include_directories: includes,
 	version: meson.project_version(),
+	compile_args: c_cpp_args,
 )

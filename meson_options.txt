@@ -12,6 +12,17 @@ option('lak_enable_examples',
 	yield: true,
 )
 
+option('lak_bounds_checks',
+	type: 'combo',
+	choices: [
+		'always',
+		'never',
+		'debug',
+	],
+	value: 'debug',
+	yield: true,
+)
+
 # windowing options
 
 option('lak_enable_windowing',
@@ -50,51 +61,29 @@ option('lak_backend',
 	yield: true,
 )
 
-option('lak_enable_softrender',
-	type: 'boolean',
-	value: false,
+option('lak_renderer',
+	type: 'array',
+	choices: [
+		'softrender',
+		'opengl',
+		'cobalt',
+	],
+	value: [
+		'opengl',
+	],
 	yield: true,
 )
 
-option('lak_enable_opengl',
-	type: 'boolean',
-	value: true,
-	yield: true,
-)
-
-option('lak_enable_cobalt',
-	type: 'boolean',
-	value: false,
-	yield: true,
-)
-
-option('lak_enable_cobalt_ogl3',
-	type: 'boolean',
-	value: true,
-	yield: true,
-)
-
-option('lak_enable_cobalt_ogl4',
-	type: 'boolean',
-	value: true,
-	yield: true,
-)
-
-option('lak_enable_cobalt_d3d11',
-	type: 'boolean',
-	value: true,
-	yield: true,
-)
-
-option('lak_enable_cobalt_d3d12',
-	type: 'boolean',
-	value: true,
-	yield: true,
-)
-
-option('lak_enable_cobalt_vk',
-	type: 'boolean',
-	value: true,
+option('cobalt_renderer',
+	type: 'array',
+	choices: [
+		'OpenGL3',
+		'OpenGL4',
+		'Direct3D11',
+		'Direct3D12',
+		'Vulkan',
+		# 'Metal',
+	],
 	yield: true,
 )
 

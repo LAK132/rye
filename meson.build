@@ -1,16 +1,20 @@
 project(
 	'rye',
 	['c', 'cpp'],
-	default_options: [
-		'b_vscrt=static_from_buildtype',
-	],
+	default_options: {
+		'c_std': 'c11',
+		'cpp_std': ['c++26', 'c++23', 'c++latest'],
+		'b_vscrt': 'static_from_buildtype',
+		'warning_level': '2',
+		'werror': false,
+		'backend_startup_project': 'rye',
+		'backend_max_links': 1,
+	},
 )
 
 cxx = meson.get_compiler('cpp')
 
 if cxx.get_id() == 'msvc'
-	version = 'c++latest'
-
 	add_project_arguments(
 		'-DUNICODE',
 		'-DWIN32_LEAN_AND_MEAN',
@@ -19,6 +23,7 @@ if cxx.get_id() == 'msvc'
 		'-wd4366',
 		'-wd4250',
 		'-Wv:18',
+		'-bigobj',
 		language: ['c', 'cpp'])
 
 	add_project_arguments(
@@ -27,21 +32,20 @@ if cxx.get_id() == 'msvc'
 		'-Zc:wchar_t',
 		'-Zc:ternary',
 		'-Zc:preprocessor',
+		'-Zc:u8EscapeEncoding',
 		language: ['cpp'])
 
 	add_project_arguments(
 		'-W0',
 		language: ['c'])
 
-	system_libraries = [
+	add_project_link_arguments(
 		'Winmm.lib',
 		'Setupapi.lib',
 		'Version.lib',
 		'Imm32.lib',
-	]
+		language: ['c', 'cpp'])
 else
-	version = 'c++20'
-
 	add_project_arguments(
 		'-Wno-unknown-warning-option',
 		'-Wno-gnu-zero-variadic-macro-arguments',
@@ -61,7 +65,21 @@ else
 		# '-mavx',
 		language: ['c', 'cpp'])
 
-	system_libraries = []
+	if cxx.get_id() == 'gcc'
+		if cxx.has_link_argument('-Wl,-lstdc++_libbacktrace')
+			# GCC <14
+			add_project_link_arguments(
+				'-Wl,-lstdc++_libbacktrace',
+				language: ['cpp'])
+		elif cxx.has_link_argument('-Wl,-lstdc++exp')
+			# GCC >=14
+			add_project_link_arguments(
+				'-Wl,-lstdc++exp',
+				language: ['cpp'])
+		else
+			warning('Unable to determine backtrace library link argument')
+		endif
+	endif
 endif
 
 add_project_arguments(
@@ -77,18 +95,7 @@ endif
 lak_subprj = subproject('lak')
 libraw_subprj = subproject('libraw')
 
-add_project_arguments(
-	libraw_subprj.get_variable('c_cpp_args'),
-	language: ['c', 'cpp'])
-
-version = lak_subprj.get_variable('version')
 lak_dep = lak_subprj.get_variable('lak_dep')
-
-if cxx.get_id() == 'msvc'
-	add_project_arguments(
-		'-bigobj',
-		language: ['c', 'cpp'])
-endif
 
 if host_machine.system() == 'windows'
   git_header = custom_target(
@@ -115,7 +122,6 @@ executable(
 		rye_main,
 		git_header,
 	],
-	override_options: lak_subprj.get_variable('override_options_w2'),
 	dependencies: [
 		rye_lib_dep,
 	],
