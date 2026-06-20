@@ -34,6 +34,8 @@ jobs:
 
       - if: startsWith(matrix.os, 'windows')
         uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'windows')
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
