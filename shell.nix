@@ -8,6 +8,7 @@ mkShell {
 		pkg-config
 		meson
 		sdl2-compat
+		vulkan-loader
 	] ++ lib.optionals stdenv.hostPlatform.isLinux [
 		libglvnd
 		libgbm
@@ -29,6 +30,7 @@ mkShell {
 	];
 
 	LD_LIBRARY_PATH = lib.makeLibraryPath ([
+		vulkan-loader
 	] ++ lib.optionals stdenv.hostPlatform.isLinux [
 		libxkbcommon
 		wayland

@@ -10,4 +10,6 @@
 #define APP_VERSION GIT_TAG "-" GIT_HASH
 #define APP_NAME    "RYE " STRINGIFY(LAK_ARCH) " " APP_VERSION
 
+void credits();
+
 #endif

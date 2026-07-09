@@ -884,102 +884,7 @@ struct main_window : lak::basic_window<main_window>
 		}
 	}
 
-	void credits()
-	{
-		LAK_TREE_NODE("Credits")
-		{
-			LAK_TREE_NODE("ImGui")
-			{
-				ImGui::Text("https://github.com/ocornut/imgui");
-				ImGui::Text(R"(Copyright (c) 2014-2025 Omar Cornut
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-)");
-			}
-			LAK_TREE_NODE("gl3w") { ImGui::Text("https://github.com/skaslev/gl3w"); }
-#ifdef LAK_USE_SDL
-			LAK_TREE_NODE("SDL2") { ImGui::Text("https://www.libsdl.org/"); }
-#endif
-			LAK_TREE_NODE("LibRaw")
-			{
-				ImGui::Text("https://github.com/LibRaw/LibRaw");
-			}
-			LAK_TREE_NODE("X3F tools (via LibRaw)")
-			{
-				ImGui::Text("https://github.com/LibRaw/LibRaw");
-				ImGui::Text("https://github.com/Kalpanika/x3f");
-				ImGui::Text(R"(Copyright (c) 2010, Roland Karlsson (roland@proxel.se)
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the organization nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY ROLAND KARLSSON ''AS IS'' AND ANY
-EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL ROLAND KARLSSON BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.)");
-			}
-			LAK_TREE_NODE("stb_image_write")
-			{
-				ImGui::Text(
-				  "https://github.com/nothings/stb/blob/master/stb_image_write.h");
-			}
-			LAK_TREE_NODE("glm")
-			{
-				ImGui::Text("https://github.com/g-truc/glm");
-				ImGui::Text(R"(Copyright (c) 2005 - G-Truc Creation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.)");
-			}
-			LAK_TREE_NODE("lak") { ImGui::Text("https://github.com/LAK132/lak"); }
-		}
-	}
+	void credits() { ::credits(); }
 
 	void about_menu(float frame_time)
 	{
@@ -1326,9 +1231,7 @@ struct rye_window : virtual public basic_window_api
 {
 	rye_window() : basic_window_api() {}
 
-#ifdef LAK_ENABLE_COBALT
 	const lak::cobalt::graphics_context *gc;
-#endif
 
 	virtual ~rye_window()
 	{
@@ -1343,7 +1246,6 @@ struct rye_window : virtual public basic_window_api
 
 		lak::debugger.live_output_enabled = true;
 
-#ifdef LAK_ENABLE_COBALT
 		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
 		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
 		ASSERT(!!gc);
@@ -1352,7 +1254,6 @@ struct rye_window : virtual public basic_window_api
 		DEBUG("Graphics: ", graphics_string);
 		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
 			std::cout << "Graphics: " << graphics_string << "\n";
-#endif
 
 		window().set_title(L"" APP_NAME);
 	}
@@ -1410,20 +1311,11 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 		{
 			std::cout << "rye.exe "
 			             "[--help] "
-#ifdef LAK_ENABLE_SOFTRENDER
-			             "[--nogl] "
-#endif
 			             "[--onlyerr] "
 			             "[<filepath>]\n";
 
 			return lak::err_t{EXIT_SUCCESS};
 		}
-#ifdef LAK_ENABLE_SOFTRENDER
-		else if (args[arg] == lak::astring("--nogl"))
-		{
-			basic_window_force_software = true;
-		}
-#endif
 		else if (args[arg] == lak::astring("--onlyerr"))
 		{
 			force_only_error = true;
@@ -1448,7 +1340,6 @@ lak::error_code<int> basic_program_init()
 {
 	basic_window_target_framerate = 30;
 
-#ifdef LAK_ENABLE_COBALT
 	basic_window_cobalt_settings.depth_mode = cobalt::graphics::IFrameBuffer::
 	  WindowDepthStencilMode::DepthUNorm24StencilUInt8;
 	basic_window_cobalt_settings.colour_mode =
@@ -1456,13 +1347,6 @@ lak::error_code<int> basic_program_init()
 
 	rye_wnd =
 	  basic_create_window<rye_window>(basic_window_cobalt_settings).UNWRAP();
-#else
-	basic_window_opengl_settings.depth_size  = 24U;
-	basic_window_opengl_settings.colour_size = 8U;
-
-	rye_wnd =
-	  basic_create_window<rye_window>(basic_window_opengl_settings).UNWRAP();
-#endif
 
 	{
 		auto window = rye_wnd.get();
@@ -1487,7 +1371,7 @@ void basic_program_handle_event(lak::event &event)
 	switch (event.type)
 	{
 		case lak::event_type::quit_program:
-			rye_wnd.get()->destroy();
+			rye_wnd.reset();
 			break;
 
 		default:
@@ -1495,7 +1379,7 @@ void basic_program_handle_event(lak::event &event)
 	}
 }
 
-bool basic_program_loop(uint64_t) { return !basic_window_instances().empty(); }
+bool basic_program_loop(uint64_t) { return (bool)rye_wnd.get(); }
 
 int basic_program_quit()
 {

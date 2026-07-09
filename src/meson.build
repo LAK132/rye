@@ -1,4 +1,7 @@
-rye_main = files('main.cpp')
+rye_main = files([
+	'credits.cpp',
+	'main.cpp',
+])
 
 libraw_dep = libraw_subprj.get_variable('libraw_dep')
 

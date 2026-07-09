@@ -1,3 +1,3 @@
 @echo off
-rmdir /s /q %CD%\install
-meson install -C build --destdir %CD%\install --no-rebuild --tags=runtime %* || exit 1
+meson compile -C build rye || exit /b 1
+meson install -C build --no-rebuild %* || exit /b 1

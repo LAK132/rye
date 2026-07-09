@@ -2,7 +2,7 @@
 
 option('lak_enable_tests',
 	type: 'boolean',
-	value: true,
+	value: false,
 	yield: true,
 )
 
@@ -69,7 +69,7 @@ option('lak_renderer',
 		'cobalt',
 	],
 	value: [
-		'opengl',
+		'cobalt',
 	],
 	yield: true,
 )
@@ -83,6 +83,12 @@ option('cobalt_renderer',
 		'Direct3D12',
 		'Vulkan',
 		# 'Metal',
+	],
+	value: [
+		'OpenGL4',
+		'Direct3D11',
+		'Direct3D12',
+		'Vulkan',
 	],
 	yield: true,
 )

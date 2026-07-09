@@ -1,3 +1,3 @@
 #! /bin/sh
-rm -rf $PWD/install
-meson install -C build --destdir $PWD/install --no-rebuild --tags=runtime $* || exit 1
+meson compile -C build rye || exit 1
+meson install -C build --no-rebuild $* || exit 1
