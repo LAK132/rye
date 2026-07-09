@@ -67,6 +67,7 @@ jobs:
         run: |
           sudo python3 -m pip install --upgrade setuptools
           sudo python3 -m pip install meson ninja
+          sudo apt install libx11-dev libx11-xcb-dev libwayland-dev
 
       - if: startsWith(matrix.os, 'macos')
         run: |
@@ -79,7 +80,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: meson setup build --buildtype release -Dprefix="$(pwd)/install"
       - run: meson compile -C build rye
-      - run: meson install -C build --no-rebuild --tags=runtime
+      - run: meson install -C build --no-rebuild
 
       - if: startsWith(matrix.os, 'windows')
         run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
