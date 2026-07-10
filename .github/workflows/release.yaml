@@ -67,7 +67,7 @@ jobs:
         run: |
           sudo python3 -m pip install --upgrade setuptools
           sudo python3 -m pip install meson ninja
-          sudo apt install libx11-dev libx11-xcb-dev libwayland-dev cairo
+          sudo apt install libx11-dev libx11-xcb-dev libwayland-dev libcairo2-dev
 
       - if: startsWith(matrix.os, 'macos')
         run: |
