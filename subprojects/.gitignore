@@ -13,6 +13,8 @@ stb/**
 Cobalt*.wrap
 glm*.wrap
 ImFileDialog*.wrap
+ImGuiColorTextEdit.wrap
+implot.wrap
 imgui*.wrap
 lmdb*.wrap
 lua*.wrap

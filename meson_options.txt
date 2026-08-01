@@ -55,9 +55,11 @@ option('lak_backend',
 		'win32',
 		'xlib',
 		'xcb',
-		'sdl',
+		# 'wayland',
+		'sdl2',
+		'sdl3',
 	],
-	value: 'sdl',
+	value: 'sdl2',
 	yield: true,
 )
 
@@ -90,6 +92,12 @@ option('cobalt_renderer',
 		'Direct3D12',
 		'Vulkan',
 	],
+	yield: true,
+)
+
+option('cobalt_cmake_no_download',
+	type: 'boolean',
+	value: false,
 	yield: true,
 )
 

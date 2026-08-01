@@ -8,6 +8,7 @@ test/*
 release/*
 build/*
 install/*
+result
 
 imgui.ini
 *.exe
