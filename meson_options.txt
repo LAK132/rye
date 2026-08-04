@@ -90,7 +90,6 @@ option('cobalt_renderer',
 		'OpenGL4',
 		'Direct3D11',
 		'Direct3D12',
-		'Vulkan',
 	],
 	yield: true,
 )
