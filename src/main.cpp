@@ -1686,8 +1686,11 @@ lak::error_code<int> basic_program_init()
 	basic_window_cobalt_settings.colour_mode =
 	  cobalt::graphics::IFrameBuffer::WindowColorSpaceMode::Default;
 
-	rye_wnd =
-	  basic_create_window<rye_window>(basic_window_cobalt_settings).UNWRAP();
+	rye_wnd = basic_create_window<rye_window>(
+	            basic_window_cobalt_settings,
+	            lak::cobalt_renderer_settings::feature_set_t{
+	              cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+	            .UNWRAP();
 
 	{
 		auto window = rye_wnd.get();
