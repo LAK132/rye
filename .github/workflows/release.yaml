@@ -76,7 +76,7 @@ jobs:
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
       - if: startsWith(matrix.os, 'windows')
-        run: meson setup build --buildtype release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin
+        run: meson setup build --buildtype release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: meson setup build --buildtype release -Dprefix="$(pwd)/install"
       - run: meson compile -C build rye
