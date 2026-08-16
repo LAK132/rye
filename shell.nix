@@ -8,6 +8,7 @@ mkShell {
 		pkg-config
 		meson
 		sdl2-compat
+		sdl3
 		vulkan-loader
 	] ++ lib.optionals stdenv.hostPlatform.isLinux [
 		libglvnd

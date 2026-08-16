@@ -15,6 +15,7 @@ glm*.wrap
 ImFileDialog*.wrap
 ImGuiColorTextEdit.wrap
 implot.wrap
+implot3d.wrap
 imgui*.wrap
 lmdb*.wrap
 lua*.wrap

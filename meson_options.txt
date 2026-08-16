@@ -1,3 +1,16 @@
+# installing
+
+option('lak_install_targets',
+	type: 'array',
+	choices: [
+		'cobalt',
+	],
+	value: [
+		'cobalt',
+	],
+	yield: true,
+)
+
 # testing options
 
 option('lak_enable_tests',
@@ -90,6 +103,7 @@ option('cobalt_renderer',
 		'OpenGL4',
 		'Direct3D11',
 		'Direct3D12',
+		'Vulkan',
 	],
 	yield: true,
 )

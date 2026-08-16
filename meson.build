@@ -10,6 +10,9 @@ project(
 		'backend_startup_project': 'rye',
 		'backend_max_links': 1,
 		'prefix': meson.global_build_root()/'install',
+		'bindir': 'bin',
+		'libdir': 'lib',
+		'licensedir': 'share'/'licenses',
 	},
 )
 
@@ -126,6 +129,7 @@ executable(
 	dependencies: [
 		rye_lib_dep,
 	],
+	build_by_default: true,
 	install: true,
-	install_rpath: get_option('prefix')/get_option('bindir'),
+	install_rpath: get_option('prefix')/get_option('libdir'),
 )

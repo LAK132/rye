@@ -76,16 +76,15 @@ jobs:
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
       - if: startsWith(matrix.os, 'windows')
-        run: meson setup build --buildtype release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"
+        run: meson setup build --buildtype=release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin -Dlicensedir="share\licenses" -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" "-Dcobalt_renderer=OpenGL4,Direct3D11,Direct3D12"
       - if: startsWith(matrix.os, 'ubuntu')
-        run: meson setup build --buildtype release -Dprefix="$(pwd)/install"
+        run: meson setup build --buildtype=release -Dprefix="$(pwd)/install" -Dlicensedir="share/licenses" "-Dcobalt_renderer=OpenGL4"
       - if: startsWith(matrix.os, 'macos')
-        run: meson setup build --buildtype release -Dprefix="$(pwd)/install" -Dcobalt_renderer="Vulkan"
-      - run: meson compile -C build rye
-      - run: meson install -C build --no-rebuild
+        run: meson setup build --buildtype=release -Dprefix="$(pwd)/install" -Dlicensedir="share/licenses" "-Dcobalt_renderer=Vulkan"
+      - run: meson install -C build
 
       - if: startsWith(matrix.os, 'windows')
-        run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+        run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll, install\bin\licenses -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
 
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: |
