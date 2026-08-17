@@ -84,7 +84,7 @@ jobs:
       - run: meson install -C build
 
       - if: startsWith(matrix.os, 'windows')
-        run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll, install\bin\licenses -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
+        run: Compress-Archive -Path install\bin\rye.exe, install\bin\*.dll, install\share\licenses -DestinationPath RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.zip
 
       - if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: |
