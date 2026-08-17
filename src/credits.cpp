@@ -152,6 +152,16 @@ void credits()
 			ImGui::Text("https://github.com/LAK132/imgui-node-editor");
 			ImGui::Text("SPDX-License-Identifier: MIT");
 		}
+		LAK_TREE_NODE("ImPlot")
+		{
+			ImGui::Text("https://github.com/epezent/implot");
+			ImGui::Text("SPDX-License-Identifier: MIT");
+		}
+		LAK_TREE_NODE("ImPlot3D")
+		{
+			ImGui::Text("https://github.com/brenocq/implot3d");
+			ImGui::Text("SPDX-License-Identifier: MIT");
+		}
 #ifdef LAK_USE_SDL
 		LAK_TREE_NODE("SDL2") { ImGui::Text("https://www.libsdl.org/"); }
 #endif
