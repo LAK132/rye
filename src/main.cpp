@@ -692,11 +692,11 @@ void process_image_ir_stage_1(lak::tasks &tasks,
 
 	if (format == sensor_format_t::foveon)
 	{
-		const lak::mat3f_t ir_channel_swap{lak::vec3{
+		const lak::mat3f_t ir_channel_swap{
 		  lak::vec3f_t{0.f, 0.f, 1.f / ir_in.b},
 		  lak::vec3f_t{1.f, 0.f, -ir_in.r / ir_in.b},
 		  lak::vec3f_t{0.f, 1.f, -ir_in.g / ir_in.b},
-		}};
+		};
 
 		for (size_t y = 0; y < img.size().y; ++y)
 		{
@@ -705,7 +705,7 @@ void process_image_ir_stage_1(lak::tasks &tasks,
 			  {
 				  for (size_t x = 0; x < img.size().x; ++x)
 				  {
-					  img[{x, y}] *= ir_channel_swap;
+					  img[{x, y}] = ir_channel_swap * img[{x, y}];
 				  }
 			  });
 		}
@@ -717,11 +717,11 @@ void process_image_ir_stage_1(lak::tasks &tasks,
 		const float ir_in_red   = ir_in.r / ir_in.b;
 		const float ir_in_green = ir_in.g / ir_in.b;
 
-		const lak::mat3f_t ir_channel_swap{lak::vec3{
+		const lak::mat3f_t ir_channel_swap{
 		  lak::vec3f_t{0.f, 0.f, 1.f},
 		  lak::vec3f_t{1.f, 0.f, -ir_in.r / ir_in.b},
 		  lak::vec3f_t{0.f, 1.f, -ir_in.g / ir_in.b},
-		}};
+		};
 
 		for (size_t y = 0; y < img.size().y; ++y)
 		{
@@ -730,7 +730,7 @@ void process_image_ir_stage_1(lak::tasks &tasks,
 			  {
 				  for (size_t x = 0; x < img.size().x; ++x)
 				  {
-					  img[{x, y}] *= ir_channel_swap;
+					  img[{x, y}] = ir_channel_swap * img[{x, y}];
 				  }
 			  });
 		}
@@ -833,7 +833,7 @@ void process_image(int white_level,
 					    lraw->imgdata.color.pre_mul[2],
 					  };
 
-					  lak::mat3f_t rgb_cam{lak::vec3{
+					  lak::mat3f_t rgb_cam{
 					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[0][0],
 					                 lraw->imgdata.color.rgb_cam[0][1],
 					                 lraw->imgdata.color.rgb_cam[0][2]},
@@ -843,9 +843,9 @@ void process_image(int white_level,
 					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[2][0],
 					                 lraw->imgdata.color.rgb_cam[2][1],
 					                 lraw->imgdata.color.rgb_cam[2][2]},
-					  }};
+					  };
 
-					  p *= rgb_cam;
+					  p = rgb_cam * p;
 				  }
 
 				  p = rye_exp_correction(p, exposure, lightness, contrast, saturation);
