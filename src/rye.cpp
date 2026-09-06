@@ -2,14 +2,14 @@
 
 #include <lak/tasks.hpp>
 
-void rye_image_view(ImTextureRef texture, float *scale)
+void rye::image_view(ImTextureRef texture, float *scale)
 {
 	ImGui::DragFloat("Scale", scale, 0.01f, 0.1f, 10.0f);
 	ImGui::Separator();
-	rye_image_view(texture, *scale);
+	rye::image_view(texture, *scale);
 }
 
-void rye_image_view(ImTextureRef texture, const float scale)
+void rye::image_view(ImTextureRef texture, const float scale)
 {
 	ImGui::BeginChild("Image View",
 	                  ImVec2(0, 0),
@@ -31,15 +31,15 @@ void rye_image_view(ImTextureRef texture, const float scale)
 	ImGui::EndChild();
 }
 
-lak::vec3f_t rye_desqueeze_sample(const lak::image<lak::vec3f_t> &src,
-                                  lak::vec2s_t dst_size,
-                                  lak::vec2s_t dst_coord)
+lak::vec3f_t rye::desqueeze_sample(const lak::image<lak::vec3f_t> &src,
+                                   lak::vec2s_t dst_size,
+                                   lak::vec2s_t dst_coord)
 {
-	return rye_desqueeze_sampler(src, dst_size)(dst_coord);
+	return rye::desqueeze_sampler(src, dst_size)(dst_coord);
 }
 
-lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
-                                       float desqueeze)
+lak::image<lak::vec3f_t> rye::desqueeze(const lak::image<lak::vec3f_t> &img,
+                                        float desqueeze)
 {
 	lak::image<lak::vec3f_t> result;
 
@@ -47,7 +47,7 @@ lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
 	  {static_cast<size_t>(std::llround(double(img.size().x) * desqueeze)),
 	   img.size().y});
 
-	auto sampler = rye_desqueeze_sampler(img, result.size());
+	auto sampler = rye::desqueeze_sampler(img, result.size());
 
 	for (lak::vec2s_t xy = {0U, 0U}; xy.y < result.size().y; ++xy.y)
 		for (xy.x = 0U; xy.x < result.size().x; ++xy.x) result[xy] = sampler(xy);
@@ -55,7 +55,7 @@ lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
 	return result;
 }
 
-lak::image<lak::vec3f_t> rye_waveform(const lak::image<lak::vec3f_t> &img)
+lak::image<lak::vec3f_t> rye::waveform(const lak::image<lak::vec3f_t> &img)
 {
 	constexpr size_t wave_size = 1024U;
 	const float wave_step      = 100.f / float(img.size().y);
@@ -101,7 +101,7 @@ lak::image<lak::vec3f_t> rye_waveform(const lak::image<lak::vec3f_t> &img)
 	return result;
 }
 
-lak::array<lak::vec3f_t> rye_histogram(const lak::image<lak::vec3f_t> &img)
+lak::array<lak::vec3f_t> rye::histogram(const lak::image<lak::vec3f_t> &img)
 {
 	constexpr size_t hist_size = 256U;
 	const float hist_step      = 100.f / float(img.contig_size());
@@ -146,29 +146,29 @@ lak::array<lak::vec3f_t> rye_histogram(const lak::image<lak::vec3f_t> &img)
 	return result;
 }
 
-lak::vec3f_t rye_clip_max_rgb(lak::vec3f_t rgb)
+lak::vec3f_t rye::clip_max_rgb(lak::vec3f_t rgb)
 {
 	return {std::min(rgb.r, 1.f), std::min(rgb.g, 1.f), std::min(rgb.b, 1.f)};
 }
 
-lak::vec3f_t rye_clip_min_rgb(lak::vec3f_t rgb)
+lak::vec3f_t rye::clip_min_rgb(lak::vec3f_t rgb)
 {
 	return {std::max(rgb.r, 0.f), std::max(rgb.g, 0.f), std::max(rgb.b, 0.f)};
 }
 
-lak::vec3f_t rye_clamp_rgb(lak::vec3f_t rgb)
+lak::vec3f_t rye::clamp_rgb(lak::vec3f_t rgb)
 {
-	const float max = rye_vec_max(rgb);
+	const float max = rye::vec_max(rgb);
 	if (max > 1.f) rgb /= max;
-	return rye_clip_min_rgb(rgb);
+	return rye::clip_min_rgb(rgb);
 }
 
 // https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
-lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb)
+lak::vec3f_t rye::rgb_to_hsl(lak::vec3f_t rgb)
 {
-	rgb              = rye_clamp_rgb(rgb);
-	const float max  = rye_vec_max(rgb);
-	const float min  = rye_vec_min(rgb);
+	rgb              = rye::clamp_rgb(rgb);
+	const float max  = rye::vec_max(rgb);
+	const float min  = rye::vec_min(rgb);
 	const float diff = max - min;
 	const float L    = (min + max) / 2.f;
 	const float S    = min == max ? 0.f
@@ -183,7 +183,7 @@ lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb)
 	return {lak::fpmod(H, 1.f), S, L};
 }
 
-lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl)
+lak::vec3f_t rye::hsl_to_rgb(lak::vec3f_t hsl)
 {
 	const float H = lak::fpmod(hsl.r, 1.f);
 	const float S = hsl.g;
@@ -212,17 +212,17 @@ lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl)
 	return {transform(tr), transform(tg), transform(tb)};
 }
 
-lak::vec3f_t rye_white_balance(lak::vec3f_t white_point)
+lak::vec3f_t rye::white_balance(lak::vec3f_t white_point)
 {
-	float mid = (rye_vec_max(white_point) + rye_vec_min(white_point)) / 2.f;
+	float mid = (rye::vec_max(white_point) + rye::vec_min(white_point)) / 2.f;
 	return {mid / white_point.r, mid / white_point.g, mid / white_point.b};
 }
 
-lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
-                                float exposure,
-                                float lightness,
-                                float contrast,
-                                float saturation)
+lak::vec3f_t rye::exp_correction(lak::vec3f_t colour,
+                                 float exposure,
+                                 float lightness,
+                                 float contrast,
+                                 float saturation)
 {
 	exposure /= 10.f;
 	lightness /= 10.f;
@@ -234,7 +234,7 @@ lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
 
 	colour *= std::exp(exposure);
 
-	auto [H, S, L] = rye_rgb_to_hsl(colour);
+	auto [H, S, L] = rye::rgb_to_hsl(colour);
 
 	L = lak::sigmoid(-10.f / lightness, L);
 
@@ -244,10 +244,10 @@ lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
 
 	S *= saturation;
 
-	return rye_hsl_to_rgb({H, S, L});
+	return rye::hsl_to_rgb({H, S, L});
 }
 
-float rye_to_srgb(float value)
+float rye::to_srgb(float value)
 {
 	if (value <= 0.0031308f)
 		return 12.92f * value;
@@ -255,7 +255,8 @@ float rye_to_srgb(float value)
 		return (1.055f * std::pow(value, 1.f / 2.4f)) - 0.055f;
 }
 
-lak::vec3f_t rye_to_srgb(lak::vec3f_t colour)
+lak::vec3f_t rye::to_srgb(lak::vec3f_t colour)
 {
-	return {rye_to_srgb(colour.r), rye_to_srgb(colour.g), rye_to_srgb(colour.b)};
+	return {
+	  rye::to_srgb(colour.r), rye::to_srgb(colour.g), rye::to_srgb(colour.b)};
 }

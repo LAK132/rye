@@ -4,86 +4,91 @@
 #include <lak/imgui/widgets.hpp>
 #include <lak/softrender/texture.hpp>
 
-void rye_image_view(ImTextureRef texture, float *scale);
-
-void rye_image_view(ImTextureRef texture, const float scale);
-
-inline auto rye_desqueeze_sampler(const lak::image<lak::vec3f_t> &src,
-                                  lak::vec2s_t dst_size)
+namespace rye
 {
-	ASSERT_EQUAL(src.size().y, dst_size.y);
-	ASSERT_GREATER_OR_EQUAL(dst_size.x, src.size().x);
+	void image_view(ImTextureRef texture, float *scale);
 
-	return
-	  [&src, dst_size, sample_rate = double(src.size().x) / double(dst_size.x)](
-	    lak::vec2s_t dst_coord)
+	void image_view(ImTextureRef texture, const float scale);
+
+	inline auto desqueeze_sampler(const lak::image<lak::vec3f_t> &src,
+	                              lak::vec2s_t dst_size)
 	{
-		double x = double(dst_coord.x) * sample_rate;
-		size_t y = dst_coord.y;
+		ASSERT_EQUAL(src.size().y, dst_size.y);
+		ASSERT_GREATER_OR_EQUAL(dst_size.x, src.size().x);
 
-		double x_min = std::floor(x);
-		double x_max = std::ceil(x);
-		size_t a     = static_cast<size_t>(std::llround(x_min));
-		size_t b     = static_cast<size_t>(std::llround(x_max));
+		return [&src,
+		        dst_size,
+		        sample_rate = double(src.size().x) /
+		                      double(dst_size.x)](lak::vec2s_t dst_coord)
+		{
+			double x = double(dst_coord.x) * sample_rate;
+			size_t y = dst_coord.y;
 
-		if (a == b) return src[{a, y}];
+			double x_min = std::floor(x);
+			double x_max = std::ceil(x);
+			size_t a     = static_cast<size_t>(std::llround(x_min));
+			size_t b     = static_cast<size_t>(std::llround(x_max));
 
-		return (src[{a, y}] * float(x_max - x)) + (src[{b, y}] * float(x - x_min));
-	};
-}
+			if (a == b) return src[{a, y}];
 
-lak::vec3f_t rye_desqueeze_sample(const lak::image<lak::vec3f_t> &src,
-                                  lak::vec2s_t dst_size,
-                                  lak::vec2s_t dst_coord);
+			return (src[{a, y}] * float(x_max - x)) +
+			       (src[{b, y}] * float(x - x_min));
+		};
+	}
 
-lak::image<lak::vec3f_t> rye_desqueeze(const lak::image<lak::vec3f_t> &img,
-                                       float desqueeze);
+	lak::vec3f_t desqueeze_sample(const lak::image<lak::vec3f_t> &src,
+	                              lak::vec2s_t dst_size,
+	                              lak::vec2s_t dst_coord);
 
-lak::image<lak::vec3f_t> rye_waveform(const lak::image<lak::vec3f_t> &img);
+	lak::image<lak::vec3f_t> desqueeze(const lak::image<lak::vec3f_t> &img,
+	                                   float desqueeze);
 
-lak::array<lak::vec3f_t> rye_histogram(const lak::image<lak::vec3f_t> &img);
+	lak::image<lak::vec3f_t> waveform(const lak::image<lak::vec3f_t> &img);
 
-template<typename T>
-T rye_vec_max(lak::vec3<T> vec)
-{
-	return std::max<T>(std::max<T>(vec.r, vec.g), vec.b);
-}
+	lak::array<lak::vec3f_t> histogram(const lak::image<lak::vec3f_t> &img);
 
-template<typename T>
-T rye_vec_min(lak::vec3<T> vec)
-{
-	return std::min<T>(std::min<T>(vec.r, vec.g), vec.b);
-}
-
-lak::vec3f_t rye_clip_max_rgb(lak::vec3f_t rgb);
-
-lak::vec3f_t rye_clip_min_rgb(lak::vec3f_t rgb);
-
-lak::vec3f_t rye_clamp_rgb(lak::vec3f_t rgb);
-
-lak::vec3f_t rye_rgb_to_hsl(lak::vec3f_t rgb);
-
-lak::vec3f_t rye_hsl_to_rgb(lak::vec3f_t hsl);
-
-lak::vec3f_t rye_white_balance(lak::vec3f_t white_point);
-
-lak::vec3f_t rye_exp_correction(lak::vec3f_t colour,
-                                float exposure,
-                                float lightness,
-                                float contrast,
-                                float saturation);
-
-float rye_to_srgb(float value);
-
-lak::vec3f_t rye_to_srgb(lak::vec3f_t colour);
-
-inline auto rye_relative_blackbody(float colour_temp)
-{
-	return
-	  [colour_temp, blackbody_max = lak::blackbody_peak_radiance(colour_temp)](
-	    double wavelength)
+	template<typename T>
+	T vec_max(lak::vec3<T> vec)
 	{
-		return float(lak::blackbody_radiance(wavelength, colour_temp) /
-		             blackbody_max);
-	};
+		return std::max<T>(std::max<T>(vec.r, vec.g), vec.b);
+	}
+
+	template<typename T>
+	T vec_min(lak::vec3<T> vec)
+	{
+		return std::min<T>(std::min<T>(vec.r, vec.g), vec.b);
+	}
+
+	lak::vec3f_t clip_max_rgb(lak::vec3f_t rgb);
+
+	lak::vec3f_t clip_min_rgb(lak::vec3f_t rgb);
+
+	lak::vec3f_t clamp_rgb(lak::vec3f_t rgb);
+
+	lak::vec3f_t rgb_to_hsl(lak::vec3f_t rgb);
+
+	lak::vec3f_t hsl_to_rgb(lak::vec3f_t hsl);
+
+	lak::vec3f_t white_balance(lak::vec3f_t white_point);
+
+	lak::vec3f_t exp_correction(lak::vec3f_t colour,
+	                            float exposure,
+	                            float lightness,
+	                            float contrast,
+	                            float saturation);
+
+	float to_srgb(float value);
+
+	lak::vec3f_t to_srgb(lak::vec3f_t colour);
+
+	inline auto relative_blackbody(float colour_temp)
+	{
+		return
+		  [colour_temp, blackbody_max = lak::blackbody_peak_radiance(colour_temp)](
+		    double wavelength)
+		{
+			return float(lak::blackbody_radiance(wavelength, colour_temp) /
+			             blackbody_max);
+		};
+	}
 }

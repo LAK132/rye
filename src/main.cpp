@@ -746,23 +746,23 @@ void process_image_ir_stage_2(lak::tasks &tasks,
 {
 	LAK_UNUSED(img);
 
-	auto wb_wv      = rye_relative_blackbody(colour_temp);
+	auto wb_wv      = rye::relative_blackbody(colour_temp);
 	out_colour_temp = uint16_t(std::max<long long>(
 	  0, std::min<long long>((1U << 15U) - 1, std::llround(colour_temp))));
 
 	// camera sensitivity compensation
-	const lak::vec3f_t aero_match_balance = rye_white_balance(
+	const lak::vec3f_t aero_match_balance = rye::white_balance(
 	  {1.f / aero_match.r, 1.f / aero_match.g, 1.f / aero_match.b});
 
 	// blackbody whitebalance
 	const lak::vec3f_t temp_sensitivity{
 	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
-	const lak::vec3f_t temp_balance = rye_white_balance(temp_sensitivity);
+	const lak::vec3f_t temp_balance = rye::white_balance(temp_sensitivity);
 
 	// aerochrome sensitivity factor
 	const lak::vec3f_t aerochrome_sensitivity{
 	  std::exp(0.5f), std::exp(1.5f), std::exp(1.4f)};
-	const lak::vec3f_t aero_balance = rye_white_balance(aerochrome_sensitivity);
+	const lak::vec3f_t aero_balance = rye::white_balance(aerochrome_sensitivity);
 
 	const lak::vec3f_t balance =
 	  aero_balance * aero_match_balance * temp_balance;
@@ -776,7 +776,7 @@ void process_image_ir_stage_2(lak::tasks &tasks,
 			  {
 				  lak::vec3f_t &irrgb = lrdimg[{x, y}];
 
-				  const float min = rye_vec_min<float>(irrgb);
+				  const float min = rye::vec_min<float>(irrgb);
 				  if (min < 0.0f) irrgb -= {min, min, min};
 
 				  irrgb *= balance;
@@ -848,13 +848,14 @@ void process_image(int white_level,
 					  p = rgb_cam * p;
 				  }
 
-				  p = rye_exp_correction(p, exposure, lightness, contrast, saturation);
-				  p = rye_to_srgb(p);
+				  p =
+				    rye::exp_correction(p, exposure, lightness, contrast, saturation);
+				  p = rye::to_srgb(p);
 				  return p;
 			  };
 			  if (desqueeze)
 			  {
-				  auto sampler = rye_desqueeze_sampler(lrdimg, lrpimg.size());
+				  auto sampler = rye::desqueeze_sampler(lrdimg, lrpimg.size());
 				  for (lak::vec2s_t xy = {0, y}; xy.x < lrpimg.size().x; ++xy.x)
 					  lrpimg[xy] = effect(sampler(xy));
 			  }
@@ -914,8 +915,8 @@ void process_image(int white_level,
 			tasks.await();
 		}
 
-		lrwaveimg = rye_waveform(wavetemp);
-		_ir_histo = rye_histogram(wavetemp);
+		lrwaveimg = rye::waveform(wavetemp);
+		_ir_histo = rye::histogram(wavetemp);
 	}
 
 	process_image_ir_stage_1(tasks, lrdimg, ir_balance.ir_in);
@@ -923,8 +924,8 @@ void process_image(int white_level,
 	process_image_ir_stage_2(tasks, lrdimg, ir_balance.aero_match, colour_temp);
 
 	// generate white balance histogram and waveform
-	lrwave2img   = rye_waveform(lrdimg);
-	_white_histo = rye_histogram(lrdimg);
+	lrwave2img   = rye::waveform(lrdimg);
+	_white_histo = rye::histogram(lrdimg);
 
 	// convert to sRGB
 	if_let_some (float stretch, desqueeze)
@@ -940,13 +941,13 @@ void process_image(int white_level,
 		  {
 			  if (desqueeze)
 			  {
-				  auto sampler = rye_desqueeze_sampler(lrdimg, lrsrgbimg.size());
+				  auto sampler = rye::desqueeze_sampler(lrdimg, lrsrgbimg.size());
 				  for (lak::vec2s_t xy = {0, y}; xy.x < lrsrgbimg.size().x; ++xy.x)
 				  {
 					  lrsrgbimg[xy] = sampler(xy);
-					  lrsrgbimg[xy] = rye_exp_correction(
+					  lrsrgbimg[xy] = rye::exp_correction(
 					    lrsrgbimg[xy], exposure, lightness, contrast, saturation);
-					  lrsrgbimg[xy] = rye_to_srgb(lrsrgbimg[xy]);
+					  lrsrgbimg[xy] = rye::to_srgb(lrsrgbimg[xy]);
 				  }
 			  }
 			  else
@@ -954,9 +955,9 @@ void process_image(int white_level,
 				  for (lak::vec2s_t xy = {0, y}; xy.x < lrsrgbimg.size().x; ++xy.x)
 				  {
 					  lrsrgbimg[xy] = lrdimg[xy];
-					  lrsrgbimg[xy] = rye_exp_correction(
+					  lrsrgbimg[xy] = rye::exp_correction(
 					    lrsrgbimg[xy], exposure, lightness, contrast, saturation);
-					  lrsrgbimg[xy] = rye_to_srgb(lrsrgbimg[xy]);
+					  lrsrgbimg[xy] = rye::to_srgb(lrsrgbimg[xy]);
 				  }
 			  }
 		  });
@@ -964,7 +965,7 @@ void process_image(int white_level,
 	tasks.await();
 
 	// generate final histogram
-	_srgb_histo = rye_histogram(lrsrgbimg);
+	_srgb_histo = rye::histogram(lrsrgbimg);
 }
 
 void process_image_async(int white_level,
@@ -1541,26 +1542,26 @@ struct main_window : lak::basic_window<main_window>
 				                  {right_size, -1},
 				                  true,
 				                  ImGuiWindowFlags_NoSavedSettings);
-				LAK_TREE_NODE("RAW") { rye_image_view(lrawtex, &lrawtex_size); }
+				LAK_TREE_NODE("RAW") { rye::image_view(lrawtex, &lrawtex_size); }
 				LAK_TREE_NODE("PROC RAW")
 				{
-					rye_image_view(lrprocessedtex, &lrawptex_size);
+					rye::image_view(lrprocessedtex, &lrawptex_size);
 				}
 				LAK_TREE_NODE("IR BALANCE WAVEFORM")
 				{
-					rye_image_view(lrwavetex, &lrawwtex_size);
+					rye::image_view(lrwavetex, &lrawwtex_size);
 				}
 				LAK_TREE_NODE("WHITE BALANCE WAVEFORM")
 				{
-					rye_image_view(lrwave2tex, &lraww2tex_size);
+					rye::image_view(lrwave2tex, &lraww2tex_size);
 				}
 				LAK_TREE_NODE("DEBAYER")
 				{
-					rye_image_view(lrdebayertex, &lrawdtex_size);
+					rye::image_view(lrdebayertex, &lrawdtex_size);
 				}
 				// LAK_TREE_NODE("sRGB")
 				{
-					rye_image_view(lrsrgbtex, &lrawsrgbtex_size);
+					rye::image_view(lrsrgbtex, &lrawsrgbtex_size);
 				}
 				ImGui::EndChild();
 			}
