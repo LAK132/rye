@@ -8,6 +8,7 @@
 #include <lak/vec.hpp>
 
 #include "libraw_format.hpp"
+#include "rye.hpp"
 
 namespace rye
 {

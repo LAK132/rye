@@ -1,3 +1,6 @@
+#ifndef RYE_RYE_HPP
+#define RYE_RYE_HPP
+
 #include <lak/system/opengl/texture.hpp>
 
 #include <lak/imgui/basic_window.hpp>
@@ -171,3 +174,5 @@ namespace rye
 		};
 	}
 }
+
+#endif
