@@ -8,6 +8,39 @@
 
 namespace rye
 {
+	enum struct sensor_format_t
+	{
+		bayer,
+		xtrans,
+		foveon,
+		rd175,
+	};
+
+	enum struct image_flip_t : int
+	{
+		none       = 0,
+		reverse_y  = 1,
+		reverse_x  = 2,
+		reverse_xy = 3,
+		transpose  = 4,
+	};
+}
+
+constexpr inline rye::image_flip_t operator&(rye::image_flip_t a,
+                                             rye::image_flip_t b)
+{
+	return static_cast<rye::image_flip_t>(static_cast<int>(a) &
+	                                      static_cast<int>(b));
+}
+constexpr inline rye::image_flip_t operator|(rye::image_flip_t a,
+                                             rye::image_flip_t b)
+{
+	return static_cast<rye::image_flip_t>(static_cast<int>(a) |
+	                                      static_cast<int>(b));
+}
+
+namespace rye
+{
 	void image_view(ImTextureRef texture, float *scale);
 
 	void image_view(ImTextureRef texture, const float scale);
