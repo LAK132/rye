@@ -437,6 +437,7 @@ struct rye_window : virtual public basic_window_api
 		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
 		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
 		ASSERT(!!gc);
+		ASSERT(!!gc->renderer);
 
 		auto graphics_string = lak::fmt<"{} {}">(gc->api_family, gc->api_version);
 		DEBUG("Graphics: ", graphics_string);
