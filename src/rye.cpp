@@ -165,6 +165,101 @@ lak::array<lak::vec3f_t> rye::histogram(lak::tasks &tasks,
 	return result;
 }
 
+lak::array<lak::vec3f_t> rye::histogram(const lak::image<lak::vec3f_t> &img)
+{
+	lak::tasks tasks{0U};
+	return rye::histogram(tasks, img);
+}
+
+static auto transform_coords(rye::image_flip_t flip)
+{
+	return [flip](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
+	{
+		if ((flip & rye::image_flip_t::transpose) != rye::image_flip_t::none)
+			index = {index.y, index.x};
+		if ((flip & rye::image_flip_t::reverse_x) != rye::image_flip_t::none)
+			index.x = (size.x - 1U) - index.x;
+		if ((flip & rye::image_flip_t::reverse_y) != rye::image_flip_t::none)
+			index.y = (size.y - 1U) - index.y;
+		return index;
+	};
+}
+
+lak::image<lak::vec3f_t> rye::transform(lak::tasks &tasks,
+                                        const lak::image<lak::vec3f_t> &src,
+                                        rye::image_flip_t flip)
+{
+	auto maybe_transpose = transform_coords(rye::image_flip_t::transpose & flip);
+	auto maybe_reverse = transform_coords(rye::image_flip_t::reverse_xy & flip);
+	auto maybe_reverse_transpose = transform_coords(flip);
+
+	const lak::vec2s_t isize = src.size();
+
+	lak::image<lak::vec3f_t> dst;
+	dst.resize(maybe_transpose(isize, {0U, 0U}));
+
+	for (size_t y = 0; y < isize.y; ++y)
+	{
+		tasks.push(
+		  [&, y = y]()
+		  {
+			  for (size_t x = 0; x < isize.x; ++x)
+			  {
+				  const lak::vec2s_t xy_dst =
+				    maybe_reverse_transpose({x, y}, dst.size());
+				  const lak::vec2s_t xy_src{x, y};
+				  dst[xy_dst] = src[xy_src];
+			  }
+		  });
+	}
+
+	tasks.await();
+
+	return dst;
+}
+
+lak::image<lak::vec3f_t> rye::transform(const lak::image<lak::vec3f_t> &src,
+                                        rye::image_flip_t flip)
+{
+	lak::tasks tasks{0U};
+	return rye::transform(tasks, src, flip);
+}
+
+lak::image<lak::vec3f_t> rye::crop(lak::tasks &tasks,
+                                   const lak::image<lak::vec3f_t> &src,
+                                   lak::vec2s_t offset,
+                                   lak::vec2s_t size)
+{
+	const lak::vec2s_t isize = src.size();
+	if ((offset.x + size.x) > isize.x) return {};
+	if ((offset.y + size.y) > isize.y) return {};
+
+	lak::image<lak::vec3f_t> dst;
+	dst.resize(size);
+
+	for (size_t y = 0, iy = offset.y; y < size.y; ++y, ++iy)
+	{
+		tasks.push(
+		  [&, y = y, iy = iy]()
+		  {
+			  for (size_t x = 0, ix = offset.x; x < size.x; ++x, ++ix)
+				  dst[{x, y}] = src[{ix, iy}];
+		  });
+	}
+
+	tasks.await();
+
+	return dst;
+}
+
+lak::image<lak::vec3f_t> rye::crop(const lak::image<lak::vec3f_t> &src,
+                                   lak::vec2s_t offset,
+                                   lak::vec2s_t size)
+{
+	lak::tasks tasks{0U};
+	return rye::crop(tasks, src, offset, size);
+}
+
 lak::vec3f_t rye::clip_max_rgb(lak::vec3f_t rgb)
 {
 	return {std::min(rgb.r, 1.f), std::min(rgb.g, 1.f), std::min(rgb.b, 1.f)};

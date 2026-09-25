@@ -89,6 +89,20 @@ namespace rye
 	lak::array<lak::vec3f_t> histogram(lak::tasks &tasks,
 	                                   const lak::image<lak::vec3f_t> &img);
 
+	lak::image<lak::vec3f_t> transform(const lak::image<lak::vec3f_t> &src,
+	                                   rye::image_flip_t flip);
+	lak::image<lak::vec3f_t> transform(lak::tasks &tasks,
+	                                   const lak::image<lak::vec3f_t> &src,
+	                                   rye::image_flip_t flip);
+
+	lak::image<lak::vec3f_t> crop(const lak::image<lak::vec3f_t> &src,
+	                              lak::vec2s_t offset,
+	                              lak::vec2s_t size);
+	lak::image<lak::vec3f_t> crop(lak::tasks &tasks,
+	                              const lak::image<lak::vec3f_t> &src,
+	                              lak::vec2s_t offset,
+	                              lak::vec2s_t size);
+
 	template<typename T>
 	T vec_max(lak::vec3<T> vec)
 	{
