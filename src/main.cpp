@@ -49,11 +49,12 @@ lak::optional<rye::image_data> raw_image;
 bool binary_update = false, raw_update = false;
 
 int last_white_level = -1;
-lak::ImUniqueTexture lrdebayertex, lrprocessedtex, lrsrgbtex, lrwavetex,
-  lrwave2tex;
+lak::ImUniqueTexture lrawtex, lrdebayertex, lrprocessedtex, lrsrgbtex,
+  lrwavetex, lrwave2tex;
 
 void reset_textures()
 {
+	lrawtex.reset();
 	lrprocessedtex.reset();
 	lrdebayertex.reset();
 	lrsrgbtex.reset();
@@ -813,6 +814,7 @@ struct rye_window : virtual public basic_window_api
 				ir_histo    = lak::move(_ir_histo);
 				white_histo = lak::move(_white_histo);
 				srgb_histo  = lak::move(_srgb_histo);
+				lrawtex.emplace(raw_image->data);
 				lrprocessedtex.emplace(lrpimg);
 				lrdebayertex.emplace(lrdimg);
 				lrsrgbtex.emplace(lrsrgbimg);

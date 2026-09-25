@@ -84,8 +84,8 @@ lak::result<rye::image_data, lak::u8string> rye::load_libraw(
 	}
 	else
 	{
-		if (lr.imgdata.idata.maker_index == LIBRAW_CAMERAMAKER_Minolta &&
-		    lak::astring_view(lr.imgdata.idata.model) == "RD175"_view)
+		if (lraw.imgdata.idata.maker_index == LIBRAW_CAMERAMAKER_Minolta &&
+		    lak::astring_view(lraw.imgdata.idata.model) == "RD175"_view)
 			result.sensor = rye::sensor_format_t::rd175;
 		else
 			result.sensor = rye::sensor_format_t::bayer;
