@@ -46,6 +46,9 @@ namespace rye
 
 	lak::result<rye::image_data, lak::u8string> load_libraw(
 	  std::filesystem::path path);
+
+	lak::result<rye::image_data, lak::u8string> load_mdc(
+	  std::filesystem::path path);
 }
 
 #endif
