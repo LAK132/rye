@@ -4,6 +4,8 @@
 #include <lak/imgui/widgets.hpp>
 #include <lak/softrender/texture.hpp>
 
+#include <lak/tasks.hpp>
+
 namespace rye
 {
 	void image_view(ImTextureRef texture, float *scale);
@@ -42,10 +44,17 @@ namespace rye
 
 	lak::image<lak::vec3f_t> desqueeze(const lak::image<lak::vec3f_t> &img,
 	                                   float desqueeze);
+	lak::image<lak::vec3f_t> desqueeze(lak::tasks &tasks,
+	                                   const lak::image<lak::vec3f_t> &img,
+	                                   float desqueeze);
 
 	lak::image<lak::vec3f_t> waveform(const lak::image<lak::vec3f_t> &img);
+	lak::image<lak::vec3f_t> waveform(lak::tasks &tasks,
+	                                  const lak::image<lak::vec3f_t> &img);
 
 	lak::array<lak::vec3f_t> histogram(const lak::image<lak::vec3f_t> &img);
+	lak::array<lak::vec3f_t> histogram(lak::tasks &tasks,
+	                                   const lak::image<lak::vec3f_t> &img);
 
 	template<typename T>
 	T vec_max(lak::vec3<T> vec)

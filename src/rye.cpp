@@ -38,7 +38,8 @@ lak::vec3f_t rye::desqueeze_sample(const lak::image<lak::vec3f_t> &src,
 	return rye::desqueeze_sampler(src, dst_size)(dst_coord);
 }
 
-lak::image<lak::vec3f_t> rye::desqueeze(const lak::image<lak::vec3f_t> &img,
+lak::image<lak::vec3f_t> rye::desqueeze(lak::tasks &tasks,
+                                        const lak::image<lak::vec3f_t> &img,
                                         float desqueeze)
 {
 	lak::image<lak::vec3f_t> result;
@@ -49,13 +50,28 @@ lak::image<lak::vec3f_t> rye::desqueeze(const lak::image<lak::vec3f_t> &img,
 
 	auto sampler = rye::desqueeze_sampler(img, result.size());
 
-	for (lak::vec2s_t xy = {0U, 0U}; xy.y < result.size().y; ++xy.y)
-		for (xy.x = 0U; xy.x < result.size().x; ++xy.x) result[xy] = sampler(xy);
+	for (size_t y = 0U; y < result.size().y; ++y)
+		tasks.push(
+		  [&, y = y, xm = result.size().x]()
+		  {
+			  for (lak::vec2s_t xy{0U, y}; xy.x < xm; ++xy.x)
+				  result[xy] = sampler(xy);
+		  });
+
+	tasks.await();
 
 	return result;
 }
 
-lak::image<lak::vec3f_t> rye::waveform(const lak::image<lak::vec3f_t> &img)
+lak::image<lak::vec3f_t> rye::desqueeze(const lak::image<lak::vec3f_t> &img,
+                                        float desqueeze)
+{
+	lak::tasks tasks{0U};
+	return rye::desqueeze(tasks, img, desqueeze);
+}
+
+lak::image<lak::vec3f_t> rye::waveform(lak::tasks &tasks,
+                                       const lak::image<lak::vec3f_t> &img)
 {
 	constexpr size_t wave_size = 1024U;
 	const float wave_step      = 100.f / float(img.size().y);
@@ -79,14 +95,12 @@ lak::image<lak::vec3f_t> rye::waveform(const lak::image<lak::vec3f_t> &img)
 			return res;
 	};
 
-	lak::tasks tasks{lak::tasks::hardware_max()};
-
-	for (size_t y = 0; y < img.size().y; ++y)
+	for (size_t x = 0; x < img.size().x; ++x)
 	{
 		tasks.push(
-		  [&, y = y]()
+		  [&, x = x, ym = result.size().y]()
 		  {
-			  for (size_t x = 0; x < result.size().x; ++x)
+			  for (size_t y = 0; y < ym; ++y)
 			  {
 				  const lak::vec3f_t &irgb = img[{x, y}];
 				  result[{x, (wave_size - 1U) - wave_clamp(irgb.r)}].r += wave_step;
@@ -101,7 +115,14 @@ lak::image<lak::vec3f_t> rye::waveform(const lak::image<lak::vec3f_t> &img)
 	return result;
 }
 
-lak::array<lak::vec3f_t> rye::histogram(const lak::image<lak::vec3f_t> &img)
+lak::image<lak::vec3f_t> rye::waveform(const lak::image<lak::vec3f_t> &img)
+{
+	lak::tasks tasks{0U};
+	return rye::waveform(tasks, img);
+}
+
+lak::array<lak::vec3f_t> rye::histogram(lak::tasks &tasks,
+                                        const lak::image<lak::vec3f_t> &img)
 {
 	constexpr size_t hist_size = 256U;
 	const float hist_step      = 100.f / float(img.contig_size());
@@ -124,14 +145,12 @@ lak::array<lak::vec3f_t> rye::histogram(const lak::image<lak::vec3f_t> &img)
 			return res;
 	};
 
-	lak::tasks tasks{lak::tasks::hardware_max()};
-
 	for (size_t y = 0; y < img.size().y; ++y)
 	{
 		tasks.push(
-		  [&, y = y]()
+		  [&, y = y, xm = img.size().x]()
 		  {
-			  for (size_t x = 0; x < img.size().x; ++x)
+			  for (size_t x = 0; x < xm; ++x)
 			  {
 				  const lak::vec3f_t &irgb = img[{x, y}];
 				  result[hist_clamp(irgb.r)].r += hist_step;
