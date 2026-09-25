@@ -33,6 +33,14 @@ lak::result<rye::image_data, lak::u8string> rye::load_image(
 		err_msg.push_back(lak::fmt<u8"libraw error: {}">(err));
 	}
 
+	// fall back for raws we have our own processors for
+
+	if (u8".X3F"_view == extension)
+	{
+		RES_TRY_ASSIGN_ERR(auto err =, rye::load_x3f(path));
+		err_msg.push_back(lak::fmt<u8"X3F error: {}">(err));
+	}
+
 	if (err_msg.empty())
 		err_msg.push_back(lak::fmt<u8"Failed to find image loader for '{}'">(
 		  lak::string_view(path.u8string())));
