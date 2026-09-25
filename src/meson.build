@@ -1,5 +1,7 @@
 rye_main = files([
 	'credits.cpp',
+	'image_data_libraw.cpp',
+	'image_data.cpp',
 	'main.cpp',
 ])
 

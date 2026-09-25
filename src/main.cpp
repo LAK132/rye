@@ -1,4 +1,14 @@
+#define LAK_BASIC_PROGRAM_IMGUI_WINDOW_IMPL
+#define LAK_BASIC_PROGRAM_IMPLOT_IMPL
+#define LAK_BASIC_PROGRAM_IMPLOT3D_IMPL
+#include <lak/basic_program.hpp>
+
+#include <lak/system/architecture.hpp>
+
 #include "main.hpp"
+
+#include "image_data.hpp"
+#include "libraw_format.hpp"
 #include "rye.hpp"
 
 #include <lak/format.hpp>
@@ -32,17 +42,18 @@
 bool force_only_error = false;
 
 lak::fs::path binary_path;
+lak::optional<lak::future<lak::result<rye::image_data, lak::u8string>>>
+  image_load;
 lak::optional<lak::future<void>> binary_load, image_process;
-lak::array<byte_t> binary;
+lak::optional<rye::image_data> raw_image;
 bool binary_update = false, raw_update = false;
 
 int last_white_level = -1;
-lak::ImUniqueTexture lrawtex, lrdebayertex, lrprocessedtex, lrsrgbtex,
-  lrwavetex, lrwave2tex;
+lak::ImUniqueTexture lrdebayertex, lrprocessedtex, lrsrgbtex, lrwavetex,
+  lrwave2tex;
 
 void reset_textures()
 {
-	lrawtex.reset();
 	lrprocessedtex.reset();
 	lrdebayertex.reset();
 	lrsrgbtex.reset();
@@ -50,33 +61,11 @@ void reset_textures()
 	lrwave2tex.reset();
 }
 
-lak::optional<LibRaw> lraw;
-lak::image<lak::vec3f_t> lrawimg, lrdimg, lrpimg, lrsrgbimg, lrwaveimg,
-  lrwave2img;
+lak::image<lak::vec3f_t> lrdimg, lrpimg, lrsrgbimg, lrwaveimg, lrwave2img;
 uint16_t out_colour_temp;
 
 lak::array<lak::vec3f_t> _ir_histo, ir_histo, _white_histo, white_histo,
   _srgb_histo, srgb_histo;
-
-enum struct sensor_format_t
-{
-	bayer,
-	xtrans,
-	foveon,
-};
-
-sensor_format_t get_sensor_format(LibRaw &lr)
-{
-	if (lr.imgdata.idata.is_foveon)
-		return sensor_format_t::foveon;
-	else if (lr.imgdata.idata.filters == 9U)
-		return sensor_format_t::xtrans;
-	// else if (lr.imgdata.idata.maker_index == LIBRAW_CAMERAMAKER_Minolta &&
-	//          lak::astring_view(lr.imgdata.idata.model) == "RD175"_view)
-	// 	return sensor_format_t::rd175;
-	else
-		return sensor_format_t::bayer;
-}
 
 bool use_database_ir_balance = true;
 bool use_database_aero_match = true;
@@ -142,555 +131,21 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
    }},
 };
 
-std::ostream &operator<<(std::ostream &strm, LibRaw_errors err)
-{
-	return strm << libraw_strerror(err);
-}
-
-lak::error_code<LibRaw_errors> libraw_as_result(int code)
-{
-	if (code == LIBRAW_SUCCESS)
-		return lak::ok_t{};
-	else
-		return lak::err_t{static_cast<LibRaw_errors>(code)};
-}
-
-lak::error_codes<std::error_code, LibRaw_errors> load_binary_ex(
-  lak::fs::path path)
-{
-	RES_TRY_ASSIGN(binary =, lak::read_file(path));
-	RES_TRY(libraw_as_result(lraw->open_buffer(binary.begin(), binary.size())));
-	RES_TRY(libraw_as_result(lraw->unpack()));
-	RES_TRY(libraw_as_result(lraw->raw2image()));
-	RES_TRY(libraw_as_result(lraw->subtract_black()));
-	RES_TRY(libraw_as_result(lraw->adjust_maximum()));
-	binary_path = lak::move(path);
-	return lak::ok_t{};
-}
-
-void load_binary(const lak::fs::path &path)
-{
-	if_let_err (auto err, load_binary_ex(path))
-	{
-		binary.clear();
-		binary_path.clear();
-		ERROR("Failed to load file: ", err);
-	}
-}
-
 void load_binary_async(const lak::fs::path &path)
 {
-	lrawimg.resize({0, 0});
+	lrdimg.resize({0, 0});
 	lrdimg.resize({0, 0});
 	lrsrgbimg.resize({0, 0});
 	lrwaveimg.resize({0, 0});
 	lrwave2img.resize({0, 0});
-	binary_load = lak::async(load_binary, path);
-}
-
-void process_image_white_level(lak::tasks &tasks,
-                               lak::image<lak::vec3f_t> &img,
-                               int white_level)
-{
-	last_white_level = white_level;
-
-	auto format = get_sensor_format(*lraw);
-
-	white_level = static_cast<int>(std::max<unsigned int>(
-	  0,
-	  std::min<unsigned int>(lraw->imgdata.color.maximum,
-	                         static_cast<unsigned int>(white_level))));
-
-	if (format == sensor_format_t::foveon) white_level = (1U << 14U) - 1U;
-
-	img.resize({lraw->imgdata.sizes.iwidth, lraw->imgdata.sizes.iheight});
-
-	// convert raw to float and apply white level adjustment
-	for (size_t y = 0; y < img.size().y; ++y)
-	{
-		tasks.push(
-		  [&, iy = y * img.size().x]()
-		  {
-			  for (size_t x = 0; x < img.size().x; ++x)
-			  {
-				  const size_t i = iy + x;
-
-				  img[i].r = float(lraw->imgdata.image[i][0]) / white_level;
-				  img[i].g = std::max(float(lraw->imgdata.image[i][1]),
-				                      float(lraw->imgdata.image[i][3])) /
-				             white_level;
-				  img[i].b = float(lraw->imgdata.image[i][2]) / white_level;
-			  }
-		  });
-	}
-	tasks.await();
-}
-
-void process_image_demosaic(lak::tasks &tasks,
-                            const lak::image<lak::vec3f_t> &src,
-                            lak::image<lak::vec3f_t> &dst)
-{
-	auto format = get_sensor_format(*lraw);
-
-	const int flip = lraw->imgdata.sizes.flip;
-	auto flip4     = [flip](lak::vec2s_t index) -> lak::vec2s_t
-	{
-		if (flip & 4) index = {index.y, index.x};
-		return index;
-	};
-	auto flip12 = [flip](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
-	{
-		if (flip & 2) index.x = (size.x - 1U) - index.x;
-		if (flip & 1) index.y = (size.y - 1U) - index.y;
-		return index;
-	};
-	auto flip124 = [&](lak::vec2s_t index, lak::vec2s_t size) -> lak::vec2s_t
-	{ return flip12(flip4(index), size); };
-
-	lak::vec2s_t isize = src.size();
-
-	// downscale demosaic
-	if (format == sensor_format_t::foveon)
-	{
-		dst.resize(flip4(isize));
-
-		for (size_t y = 0; y < isize.y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < isize.x; ++x)
-				  {
-					  const lak::vec2s_t xy_dst = flip124({x, y}, dst.size());
-					  const lak::vec2s_t xy_src{x, y};
-					  dst[xy_dst] = src[xy_src];
-				  }
-			  });
-		}
-
-		tasks.await();
-	}
-	else if (format == sensor_format_t::xtrans)
-	{
-		isize.x -= (3U * 2U);
-		isize.y -= (3U * 2U);
-		dst.resize(flip4(isize));
-
-		for (size_t y = 0; y < isize.y / 3U; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  const size_t y3 = y * 3;
-				  for (size_t x = 0; x < isize.x / 3U; ++x)
-				  {
-					  const size_t x3 = x * 3;
-
-					  const lak::vec2s_t xy_dst_00 =
-					    flip124({x3 + 0U, y3 + 0U}, dst.size());
-					  const lak::vec2s_t xy_dst_01 =
-					    flip124({x3 + 0U, y3 + 1U}, dst.size());
-					  const lak::vec2s_t xy_dst_02 =
-					    flip124({x3 + 0U, y3 + 2U}, dst.size());
-
-					  const lak::vec2s_t xy_dst_10 =
-					    flip124({x3 + 1U, y3 + 0U}, dst.size());
-					  const lak::vec2s_t xy_dst_11 =
-					    flip124({x3 + 1U, y3 + 1U}, dst.size());
-					  const lak::vec2s_t xy_dst_12 =
-					    flip124({x3 + 1U, y3 + 2U}, dst.size());
-
-					  const lak::vec2s_t xy_dst_20 =
-					    flip124({x3 + 2U, y3 + 0U}, dst.size());
-					  const lak::vec2s_t xy_dst_21 =
-					    flip124({x3 + 2U, y3 + 1U}, dst.size());
-					  const lak::vec2s_t xy_dst_22 =
-					    flip124({x3 + 2U, y3 + 2U}, dst.size());
-
-					  const lak::vec2s_t xy_src_01_20{x3 + 0U + 2U, y3 + 3U + 0U};
-					  const lak::vec2s_t xy_src_01_21{x3 + 0U + 2U, y3 + 3U + 1U};
-					  const lak::vec2s_t xy_src_01_22{x3 + 0U + 2U, y3 + 3U + 2U};
-
-					  const lak::vec2s_t xy_src_02_20{x3 + 0U + 2U, y3 + 6U + 0U};
-
-					  const lak::vec2s_t xy_src_10_02{x3 + 3U + 0U, y3 + 0U + 2U};
-					  const lak::vec2s_t xy_src_10_12{x3 + 3U + 1U, y3 + 0U + 2U};
-					  const lak::vec2s_t xy_src_10_22{x3 + 3U + 2U, y3 + 0U + 2U};
-
-					  const lak::vec2s_t xy_src_11_00{x3 + 3U + 0U, y3 + 3U + 0U};
-					  const lak::vec2s_t xy_src_11_01{x3 + 3U + 0U, y3 + 3U + 1U};
-					  const lak::vec2s_t xy_src_11_02{x3 + 3U + 0U, y3 + 3U + 2U};
-					  const lak::vec2s_t xy_src_11_10{x3 + 3U + 1U, y3 + 3U + 0U};
-					  const lak::vec2s_t xy_src_11_11{x3 + 3U + 1U, y3 + 3U + 1U};
-					  const lak::vec2s_t xy_src_11_12{x3 + 3U + 1U, y3 + 3U + 2U};
-					  const lak::vec2s_t xy_src_11_20{x3 + 3U + 2U, y3 + 3U + 0U};
-					  const lak::vec2s_t xy_src_11_21{x3 + 3U + 2U, y3 + 3U + 1U};
-					  const lak::vec2s_t xy_src_11_22{x3 + 3U + 2U, y3 + 3U + 2U};
-
-					  const lak::vec2s_t xy_src_12_00{x3 + 3U + 0U, y3 + 6U + 0U};
-					  const lak::vec2s_t xy_src_12_10{x3 + 3U + 1U, y3 + 6U + 0U};
-					  const lak::vec2s_t xy_src_12_20{x3 + 3U + 2U, y3 + 6U + 0U};
-
-					  const lak::vec2s_t xy_src_20_02{x3 + 6U + 0U, y3 + 0U + 2U};
-
-					  const lak::vec2s_t xy_src_21_00{x3 + 6U + 0U, y3 + 3U + 0U};
-					  const lak::vec2s_t xy_src_21_01{x3 + 6U + 0U, y3 + 3U + 1U};
-					  const lak::vec2s_t xy_src_21_02{x3 + 6U + 0U, y3 + 3U + 2U};
-
-					  /*
-					  G G B  G G R  G G B  G G R
-					  G G R  G G B  G G R  G G B
-					  R B G  B R G  R B G  B R G
-
-					  G G R  G G B  G G R  G G B
-					  G G B  G G R  G G B  G G R
-					  B R G  R B G  B R G  R B G
-
-					  G G B  G G R  G G B  G G R
-					  G G R  G G B  G G R  G G B
-					  R B G  B R G  R B G  B R G
-
-					  G G R  G G B  G G R  G G B
-					  G G B  G G R  G G B  G G R
-					  B R G  R B G  B R G  R B G
-					  */
-
-					  /*
-					  G G .  G G .  G G .
-					  G G .  G G .  G G .
-					  . . G  . . G  . . G
-
-					  G G .  G G .  G G .
-					  G G .  G G .  G G .
-					  . . G  . . G  . . G
-
-					  G G .  G G .  G G .
-					  G G .  G G .  G G .
-					  . . G  . . G  . . G
-					  */
-
-					  dst[xy_dst_00].g = src[xy_src_11_00].g;
-					  dst[xy_dst_10].g = src[xy_src_11_10].g;
-					  dst[xy_dst_20].g = (src[xy_src_10_22].g + src[xy_src_11_10].g +
-					                      src[xy_src_21_00].g) /
-					                     3.f;
-
-					  dst[xy_dst_01].g = src[xy_src_11_01].g;
-					  dst[xy_dst_11].g = src[xy_src_11_11].g;
-					  dst[xy_dst_21].g = (src[xy_src_11_22].g + src[xy_src_11_11].g +
-					                      src[xy_src_21_01].g) /
-					                     3.f;
-
-					  dst[xy_dst_02].g = (src[xy_src_01_22].g + src[xy_src_11_01].g +
-					                      src[xy_src_12_00].g) /
-					                     3.f;
-					  dst[xy_dst_12].g = (src[xy_src_11_22].g + src[xy_src_11_11].g +
-					                      src[xy_src_12_10].g) /
-					                     3.f;
-					  dst[xy_dst_22].g = src[xy_src_11_22].g;
-
-					  constexpr float nb4_4 = 0.05f;
-					  constexpr float nb4_3 = 0.1f;
-					  constexpr float nb4_2 = 0.2f;
-					  constexpr float nb4_1 = 1.f - (nb4_2 + nb4_3 + nb4_4);
-
-					  constexpr float nb3_2 = 0.2f;
-					  constexpr float nb3_1 = 1.f - (nb3_2 + nb3_2);
-
-					  if (((x + y) % 2U) == 0U)
-					  {
-						  /*
-						  . . .  . . B  . . .
-						  . . B  . . .  . . B
-						  B . .  . B .  B . .
-
-						  . . B  . . .  . . B
-						  . . .  . . B  . . .
-						  . B .  B . .  . B .
-
-						  . . .  . . B  . . .
-						  . . B  . . .  . . B
-						  B . .  . B .  B . .
-						  */
-						  dst[xy_dst_00].b =
-						    (nb4_1 * src[xy_src_01_20].b) + (nb4_2 * src[xy_src_10_12].b) +
-						    (nb4_3 * src[xy_src_11_02].b) + (nb4_4 * src[xy_src_11_21].b);
-						  dst[xy_dst_10].b =
-						    (nb4_1 * src[xy_src_10_12].b) + (nb4_2 * src[xy_src_11_21].b) +
-						    (nb4_3 * src[xy_src_01_20].b) + (nb4_4 * src[xy_src_11_02].b);
-						  dst[xy_dst_20].b = (nb3_1 * src[xy_src_11_21].b) +
-						                     (nb3_2 * src[xy_src_10_12].b) +
-						                     (nb3_2 * src[xy_src_20_02].b);
-
-						  dst[xy_dst_01].b =
-						    (nb4_1 * src[xy_src_11_02].b) + (nb4_2 * src[xy_src_01_20].b) +
-						    (nb4_3 * src[xy_src_11_21].b) + (nb4_4 * src[xy_src_10_12].b);
-						  dst[xy_dst_11].b =
-						    (nb4_1 * src[xy_src_11_21].b) + (nb4_2 * src[xy_src_11_02].b) +
-						    (nb4_3 * src[xy_src_10_12].b) + (nb4_4 * src[xy_src_01_20].b);
-						  dst[xy_dst_21].b = src[xy_src_11_21].b;
-
-						  dst[xy_dst_02].b = src[xy_src_11_02].b;
-						  dst[xy_dst_12].b = (nb3_1 * src[xy_src_11_02].b) +
-						                     (nb3_2 * src[xy_src_11_21].b) +
-						                     (nb3_2 * src[xy_src_12_20].b);
-						  dst[xy_dst_22].b =
-						    (src[xy_src_11_21].b + src[xy_src_12_20].b) / 2.f;
-
-						  /*
-						  . . R  . . .  . . R
-						  . . .  . . R  . . .
-						  . R .  R . .  . R .
-
-						  . . .  . . R  . . .
-						  . . R  . . .  . . R
-						  R . .  . R .  R . .
-
-						  . . R  . . .  . . R
-						  . . .  . . R  . . .
-						  . R .  R . .  . R .
-						  */
-						  dst[xy_dst_00].r =
-						    (nb4_1 * src[xy_src_10_02].r) + (nb4_2 * src[xy_src_01_21].r) +
-						    (nb4_3 * src[xy_src_11_20].r) + (nb4_4 * src[xy_src_11_12].r);
-						  dst[xy_dst_10].r =
-						    (nb4_1 * src[xy_src_11_20].r) + (nb4_2 * src[xy_src_10_02].r) +
-						    (nb4_3 * src[xy_src_11_12].r) + (nb4_4 * src[xy_src_01_21].r);
-						  dst[xy_dst_20].r = src[xy_src_11_20].r;
-
-						  dst[xy_dst_01].r =
-						    (nb4_1 * src[xy_src_01_21].r) + (nb4_2 * src[xy_src_11_12].r) +
-						    (nb4_3 * src[xy_src_10_02].r) + (nb4_4 * src[xy_src_11_20].r);
-						  dst[xy_dst_11].r =
-						    (nb4_1 * src[xy_src_11_12].r) + (nb4_2 * src[xy_src_11_20].r) +
-						    (nb4_3 * src[xy_src_01_21].r) + (nb4_4 * src[xy_src_10_02].r);
-						  dst[xy_dst_21].r = (nb3_1 * src[xy_src_11_20].r) +
-						                     (nb3_2 * src[xy_src_11_12].r) +
-						                     (nb3_2 * src[xy_src_21_02].r);
-
-						  dst[xy_dst_02].r = (nb3_1 * src[xy_src_11_12].r) +
-						                     (nb3_2 * src[xy_src_01_21].r) +
-						                     (nb3_2 * src[xy_src_02_20].r);
-						  dst[xy_dst_12].r = src[xy_src_11_12].r;
-						  dst[xy_dst_22].r =
-						    (src[xy_src_11_12].r + src[xy_src_21_02].r) / 2.f;
-					  }
-					  else
-					  {
-						  /*
-						  . . B  . . .  . . B
-						  . . .  . . B  . . .
-						  . B .  B . .  . B .
-
-						  . . .  . . B  . . .
-						  . . B  . . .  . . B
-						  B . .  . B .  B . .
-
-						  . . B  . . .  . . B
-						  . . .  . . B  . . .
-						  . B .  B . .  . B .
-						  */
-						  dst[xy_dst_00].b =
-						    (nb4_1 * src[xy_src_10_02].b) + (nb4_2 * src[xy_src_01_21].b) +
-						    (nb4_3 * src[xy_src_11_20].b) + (nb4_4 * src[xy_src_11_12].b);
-						  dst[xy_dst_10].b =
-						    (nb4_1 * src[xy_src_11_20].b) + (nb4_2 * src[xy_src_10_02].b) +
-						    (nb4_3 * src[xy_src_11_12].b) + (nb4_4 * src[xy_src_01_21].b);
-						  dst[xy_dst_20].b = src[xy_src_11_20].b;
-
-						  dst[xy_dst_01].b =
-						    (nb4_1 * src[xy_src_01_21].b) + (nb4_2 * src[xy_src_11_12].b) +
-						    (nb4_3 * src[xy_src_10_02].b) + (nb4_4 * src[xy_src_11_20].b);
-						  dst[xy_dst_11].b =
-						    (nb4_1 * src[xy_src_11_12].b) + (nb4_2 * src[xy_src_11_20].b) +
-						    (nb4_3 * src[xy_src_01_21].b) + (nb4_4 * src[xy_src_10_02].b);
-						  dst[xy_dst_21].b = (nb3_1 * src[xy_src_11_20].b) +
-						                     (nb3_2 * src[xy_src_11_12].b) +
-						                     (nb3_2 * src[xy_src_21_02].b);
-
-						  dst[xy_dst_02].b = (nb3_1 * src[xy_src_11_12].b) +
-						                     (nb3_2 * src[xy_src_01_21].b) +
-						                     (nb3_2 * src[xy_src_02_20].b);
-						  dst[xy_dst_12].b = src[xy_src_11_12].b;
-						  dst[xy_dst_22].b =
-						    (src[xy_src_11_12].b + src[xy_src_21_02].b) / 2.f;
-
-						  /*
-						  . . .  . . R  . . .
-						  . . R  . . .  . . R
-						  R . .  . R .  R . .
-
-						  . . R  . . .  . . R
-						  . . .  . . R  . . .
-						  . R .  R . .  . R .
-
-						  . . .  . . R  . . .
-						  . . R  . . .  . . R
-						  R . .  . R .  R . .
-						  */
-						  dst[xy_dst_00].r =
-						    (nb4_1 * src[xy_src_01_20].r) + (nb4_2 * src[xy_src_10_12].r) +
-						    (nb4_3 * src[xy_src_11_02].r) + (nb4_4 * src[xy_src_11_21].r);
-						  dst[xy_dst_10].r =
-						    (nb4_1 * src[xy_src_10_12].r) + (nb4_2 * src[xy_src_11_21].r) +
-						    (nb4_3 * src[xy_src_01_20].r) + (nb4_4 * src[xy_src_11_02].r);
-						  dst[xy_dst_20].r = (nb3_1 * src[xy_src_11_21].r) +
-						                     (nb3_2 * src[xy_src_10_12].r) +
-						                     (nb3_2 * src[xy_src_20_02].r);
-
-						  dst[xy_dst_01].r =
-						    (nb4_1 * src[xy_src_11_02].r) + (nb4_2 * src[xy_src_01_20].r) +
-						    (nb4_3 * src[xy_src_11_21].r) + (nb4_4 * src[xy_src_10_12].r);
-						  dst[xy_dst_11].r =
-						    (nb4_1 * src[xy_src_11_21].r) + (nb4_2 * src[xy_src_11_02].r) +
-						    (nb4_3 * src[xy_src_10_12].r) + (nb4_4 * src[xy_src_01_20].r);
-						  dst[xy_dst_21].r = src[xy_src_11_21].r;
-
-						  dst[xy_dst_02].r = src[xy_src_11_02].r;
-						  dst[xy_dst_12].r = (nb3_1 * src[xy_src_11_02].r) +
-						                     (nb3_2 * src[xy_src_11_21].r) +
-						                     (nb3_2 * src[xy_src_12_20].r);
-						  dst[xy_dst_22].r =
-						    (src[xy_src_11_21].r + src[xy_src_12_20].r) / 2.f;
-					  }
-				  }
-			  });
-		}
-
-		tasks.await();
-	}
-	else
-	{
-		isize.x -= (2U * 2U);
-		isize.y -= (2U * 2U);
-		dst.resize(flip4(isize));
-
-		lak::vec2s_t channels[4U] = {{0U, 0U}, {0U, 0U}, {0U, 0U}, {0U, 0U}};
-		for (int y = 0; y < 2; ++y)
-			for (int x = 0; x < 2; ++x)
-				if (int col = lraw->COLOR(y, x); col <= 3)
-					channels[size_t(col)] = {size_t(x), size_t(y)};
-
-		for (size_t y = 0; y < isize.y; ++y)
-		{
-			tasks.push(
-			  [&, y = y]()
-			  {
-				  for (size_t x = 0; x < isize.x; ++x)
-				  {
-					  const lak::vec2s_t xy_dst = flip124({x, y}, dst.size());
-					  const lak::vec2s_t xy_src{x + 2U, y + 2U};
-
-					  /*
-					  R G R G
-					  G B G B
-					  R G R G
-					  G B G B
-					  */
-
-					  /*
-					  R . R .
-					  . . . .
-					  R . R .
-					  . . . .
-					  */
-
-					  if (bool r_x = ((x % 2U) == channels[0U].x),
-					      r_y      = ((y % 2U) == channels[0U].y);
-					      r_x && r_y) [[unlikely]]
-					  {
-						  dst[xy_dst].r = src[xy_src].r;
-					  }
-					  else if (!(r_x || r_y))
-					  {
-						  dst[xy_dst].r = (src[{xy_src.x - 1U, xy_src.y - 1U}].r +
-						                   src[{xy_src.x - 1U, xy_src.y + 1U}].r +
-						                   src[{xy_src.x + 1U, xy_src.y - 1U}].r +
-						                   src[{xy_src.x + 1U, xy_src.y + 1U}].r) /
-						                  4.f;
-					  }
-					  else if (r_x)
-					  {
-						  dst[xy_dst].r = (src[{xy_src.x, xy_src.y - 1U}].r +
-						                   src[{xy_src.x, xy_src.y + 1U}].r) /
-						                  2.f;
-					  }
-					  else /* if (r_y) */
-					  {
-						  dst[xy_dst].r = (src[{xy_src.x - 1U, xy_src.y}].r +
-						                   src[{xy_src.x + 1U, xy_src.y}].r) /
-						                  2.f;
-					  }
-
-					  /*
-					  . . . .
-					  . B . B
-					  . . . .
-					  . B . B
-					  */
-
-					  if (bool b_x = ((x % 2U) == channels[2U].x),
-					      b_y      = ((y % 2U) == channels[2U].y);
-					      b_x && b_y) [[unlikely]]
-					  {
-						  dst[xy_dst].b = src[xy_src].b;
-					  }
-					  else if (!(b_x || b_y))
-					  {
-						  dst[xy_dst].b = (src[{xy_src.x - 1U, xy_src.y - 1U}].b +
-						                   src[{xy_src.x - 1U, xy_src.y + 1U}].b +
-						                   src[{xy_src.x + 1U, xy_src.y - 1U}].b +
-						                   src[{xy_src.x + 1U, xy_src.y + 1U}].b) /
-						                  4.f;
-					  }
-					  else if (b_x)
-					  {
-						  dst[xy_dst].b = (src[{xy_src.x, xy_src.y - 1U}].b +
-						                   src[{xy_src.x, xy_src.y + 1U}].b) /
-						                  2.f;
-					  }
-					  else /* if (b_y) */
-					  {
-						  dst[xy_dst].b = (src[{xy_src.x - 1U, xy_src.y}].b +
-						                   src[{xy_src.x + 1U, xy_src.y}].b) /
-						                  2.f;
-					  }
-
-					  /*
-					  . G . G
-					  G . G .
-					  . G . G
-					  G . G .
-					  */
-
-					  if (lak::vec2s_t xy_m2{xy_src.x % 2U, xy_src.y % 2U};
-					      (xy_m2 == channels[1U]) || (xy_m2 == channels[3U]))
-					  {
-						  dst[xy_dst].g = src[xy_src].g;
-					  }
-					  else
-					  {
-						  dst[xy_dst].g = (src[{xy_src.x - 1U, xy_src.y}].g +
-						                   src[{xy_src.x + 1U, xy_src.y}].g +
-						                   src[{xy_src.x, xy_src.y - 1U}].g +
-						                   src[{xy_src.x, xy_src.y + 1U}].g) /
-						                  4.f;
-					  }
-				  }
-			  });
-		}
-
-		tasks.await();
-	}
+	image_load = rye::load_image_async(path);
 }
 
 void process_image_ir_stage_1(lak::tasks &tasks,
                               lak::image<lak::vec3f_t> &img,
                               lak::vec3f_t ir_in)
 {
-	auto format = get_sensor_format(*lraw);
-
-	if (format == sensor_format_t::foveon)
+	if (raw_image->sensor == rye::sensor_format_t::foveon)
 	{
 		const lak::mat3f_t ir_channel_swap{
 		  lak::vec3f_t{0.f, 0.f, 1.f / ir_in.b},
@@ -797,19 +252,11 @@ void process_image(int white_level,
 {
 	lak::tasks tasks{lak::tasks::hardware_max()};
 
-	bool is_foveon                  = lraw->imgdata.idata.is_foveon;
-	[[maybe_unused]] bool is_xtrans = lraw->imgdata.idata.filters == 9U;
+	bool is_foveon = raw_image->sensor == rye::sensor_format_t::foveon;
+	[[maybe_unused]] bool is_xtrans =
+	  raw_image->sensor == rye::sensor_format_t::xtrans;
 
-	if (lrawimg.contig_size() == 0 || white_level != last_white_level)
-	{
-		process_image_white_level(tasks, lrawimg, white_level);
-		lrdimg.resize({0, 0});
-	}
-
-	// if (lrdimg.contig_size() == 0)
-	{
-		process_image_demosaic(tasks, lrawimg, lrdimg);
-	}
+	lrdimg = raw_image->data;
 
 	// convert to sRGB
 	if_let_some (float stretch, desqueeze)
@@ -827,25 +274,9 @@ void process_image(int white_level,
 			  {
 				  if (is_foveon)
 				  {
-					  p *= lak::vec3f_t{
-					    lraw->imgdata.color.pre_mul[0],
-					    lraw->imgdata.color.pre_mul[1],
-					    lraw->imgdata.color.pre_mul[2],
-					  };
+					  p *= raw_image->whitebalance_coef;
 
-					  lak::mat3f_t rgb_cam{
-					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[0][0],
-					                 lraw->imgdata.color.rgb_cam[0][1],
-					                 lraw->imgdata.color.rgb_cam[0][2]},
-					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[1][0],
-					                 lraw->imgdata.color.rgb_cam[1][1],
-					                 lraw->imgdata.color.rgb_cam[1][2]},
-					    lak::vec3f_t{lraw->imgdata.color.rgb_cam[2][0],
-					                 lraw->imgdata.color.rgb_cam[2][1],
-					                 lraw->imgdata.color.rgb_cam[2][2]},
-					  };
-
-					  p = rgb_cam * p;
+					  p = raw_image->cam_to_sRGB * p;
 				  }
 
 				  p =
@@ -988,9 +419,49 @@ void process_image_async(int white_level,
 	                           desqueeze);
 }
 
-struct main_window : lak::basic_window<main_window>
+struct rye_window : virtual public basic_window_api
 {
-	using super_window = lak::basic_window<main_window>;
+	rye_window() : basic_window_api() {}
+
+	const lak::cobalt::graphics_context *gc;
+
+	virtual ~rye_window() { reset_textures(); }
+
+	virtual void init() override final
+	{
+		lak::debugger.crash_path = std::filesystem::current_path() /
+		                           "ATTACH-TO-ISSUE-ON-RYE-GITHUB-REPO.txt";
+
+		lak::debugger.live_output_enabled = true;
+
+		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
+		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
+		ASSERT(!!gc);
+
+		auto graphics_string = lak::fmt<"{} {}">(gc->api_family, gc->api_version);
+		DEBUG("Graphics: ", graphics_string);
+		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
+			std::cout << "Graphics: " << graphics_string << "\n";
+
+		window().set_title(L"" APP_NAME);
+	}
+
+	virtual void handle_event(lak::event &event) override final
+	{
+		switch (event.type)
+		{
+			case lak::event_type::close_window:
+				destroy();
+				break;
+
+			case lak::event_type::dropfile:
+				load_binary_async(lak::fs::path(event.dropfile().path));
+				break;
+
+			default:
+				break;
+		}
+	}
 
 	void open_file(const lak::fs::path &path) { load_binary_async(path); }
 
@@ -1057,18 +528,9 @@ struct main_window : lak::basic_window<main_window>
 		{
 			for (xy.x = 0; xy.x < img16.size().x; ++xy.x)
 			{
-				img16[xy].r = static_cast<uint16_t>(std::max<long long>(
-				  std::min<long long>(std::llround(lrdimg[xy].r * float(UINT16_MAX)),
-				                      UINT16_MAX),
-				  0));
-				img16[xy].g = static_cast<uint16_t>(std::max<long long>(
-				  std::min<long long>(std::llround(lrdimg[xy].g * float(UINT16_MAX)),
-				                      UINT16_MAX),
-				  0));
-				img16[xy].b = static_cast<uint16_t>(std::max<long long>(
-				  std::min<long long>(std::llround(lrdimg[xy].b * float(UINT16_MAX)),
-				                      UINT16_MAX),
-				  0));
+				img16[xy].r = lak::frac_to_int<uint16_t>(lrdimg[xy].r);
+				img16[xy].g = lak::frac_to_int<uint16_t>(lrdimg[xy].g);
+				img16[xy].b = lak::frac_to_int<uint16_t>(lrdimg[xy].b);
 			}
 		}
 
@@ -1112,9 +574,10 @@ struct main_window : lak::basic_window<main_window>
 		ifd0.push_Compression(lak::fixed_array(uint16_t(1U)));
 		// LinearRaw
 		ifd0.push_PhotometricInterpretation(lak::fixed_array(uint16_t(34892U)));
-		ifd0.push_Make(lak::astring_view((const char *)lraw->imgdata.idata.make));
+		ifd0.push_Make(
+		  lak::astring_view((const char *)raw_image->camera.make.c_str()));
 		ifd0.push_Model(
-		  lak::astring_view((const char *)lraw->imgdata.idata.model));
+		  lak::astring_view((const char *)raw_image->camera.model.c_str()));
 		ifd0.push_Orientation(lak::fixed_array((uint16_t(1U))));
 		ifd0.push_SamplesPerPixel(lak::fixed_array(uint16_t(3U)));
 
@@ -1126,33 +589,32 @@ struct main_window : lak::basic_window<main_window>
 		ifd0.push_Software(APP_NAME ""_view);
 		ifd0.push_SampleFormat({1U});
 
-		if (lraw->imgdata.other.shutter != 0.f)
+		if (raw_image->shutter != 0.f)
 			ifd0.push_ExposureTime(lak::fixed_array(lak::tiff::urational{
-			  1000U, uint32_t((1.f / lraw->imgdata.other.shutter) * 1000)}));
-		ifd0.push_FNumber(lak::fixed_array(lak::tiff::urational{
-		  uint32_t(lraw->imgdata.other.aperture * 100), 100U}));
-		ifd0.push_ISOSpeedRatings(
-		  lak::fixed_array(uint16_t(lraw->imgdata.other.iso_speed)));
-		ifd0.push_FocalLength(lak::fixed_array(lak::tiff::urational{
-		  uint32_t(lraw->imgdata.other.focal_len * 100), 100U}));
+			  1000U, uint32_t((1.f / raw_image->shutter) * 1000)}));
+		ifd0.push_FNumber(lak::fixed_array(
+		  lak::tiff::urational{uint32_t(raw_image->aperture * 100), 100U}));
+		ifd0.push_ISOSpeedRatings(lak::fixed_array(uint16_t(raw_image->iso)));
+		ifd0.push_FocalLength(lak::fixed_array(
+		  lak::tiff::urational{uint32_t(raw_image->focal_length * 100), 100U}));
 
 		ifd0.push_DNGVersion(
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
 		ifd0.push_DNGBackwardVersion(
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
 		ifd0.push_UniqueCameraModel(lak::string_view(
-		  lraw->imgdata.idata.make + " "_str + lraw->imgdata.idata.model));
+		  lak::fmt<"{} {}">(raw_image->camera.make, raw_image->camera.model)));
 		ifd0.push_CameraSerialNumber(
-		  lak::astring_view((const char *)lraw->imgdata.shootinginfo.BodySerial));
+		  lak::astring_view((const char *)raw_image->camera.serial.c_str()));
 
 		auto &exif = ifd0.push_exif();
 
 		exif.push_LensMake(
-		  lak::astring_view((const char *)lraw->imgdata.lens.LensMake));
+		  lak::astring_view((const char *)raw_image->lens.make.c_str()));
 		exif.push_LensModel(
-		  lak::astring_view((const char *)lraw->imgdata.lens.Lens));
+		  lak::astring_view((const char *)raw_image->lens.model.c_str()));
 		exif.push_LensSerialNumber(
-		  lak::astring_view((const char *)lraw->imgdata.lens.LensSerial));
+		  lak::astring_view((const char *)raw_image->lens.serial.c_str()));
 
 		strm.write<lak::endian::native>(tiff).UNWRAP();
 
@@ -1160,8 +622,6 @@ struct main_window : lak::basic_window<main_window>
 	}
 
 	const lak::fs::path &file_path() { return binary_path; }
-
-	lak::span<byte_t> file_data() { return lak::span(binary); }
 
 	bool update() { return binary_update || raw_update; }
 
@@ -1241,14 +701,40 @@ struct main_window : lak::basic_window<main_window>
 		}
 	}
 
+	void load_db_data()
+	{
+		used_ir_balance_from_db = false;
+		used_aero_match_from_db = false;
+		if (use_database_ir_balance || use_database_aero_match)
+		{
+			if (auto it = ir_balance_db.find(lak::fmt<"{} {}">(
+			      raw_image->camera.make, raw_image->camera.model));
+			    it != ir_balance_db.end())
+			{
+				if (use_database_ir_balance)
+				{
+					ir_balance.ir_in        = it->second.ir_in;
+					used_ir_balance_from_db = true;
+				}
+				if (use_database_aero_match)
+				{
+					ir_balance.aero_match   = it->second.aero_match;
+					used_aero_match_from_db = true;
+				}
+			}
+		}
+	}
+
 	void menu_bar(float frame_time)
 	{
 		file_menu();
 		about_menu(frame_time);
-		ImGui::Checkbox("Use sensor database IR white point",
-		                &use_database_ir_balance);
-		ImGui::Checkbox("Use sensor database RGB white point",
-		                &use_database_aero_match);
+		if (ImGui::Checkbox("Use sensor database IR white point",
+		                    &use_database_ir_balance))
+			load_db_data();
+		if (ImGui::Checkbox("Use sensor database RGB white point",
+		                    &use_database_aero_match))
+			load_db_data();
 	}
 
 	int lraw_white_level = UINT16_MAX;
@@ -1275,7 +761,7 @@ struct main_window : lak::basic_window<main_window>
 
 	void main_region(float frame_time)
 	{
-		if (binary_load)
+		if (image_load)
 		{
 			ImGui::BeginChild(
 			  "Mid", {-1, -1}, true, ImGuiWindowFlags_NoSavedSettings);
@@ -1288,45 +774,30 @@ struct main_window : lak::basic_window<main_window>
 			else
 				ImGui::Text("Loading.");
 
-			if (binary_load->has_value())
+			if (image_load->has_value())
 			{
-				binary_load.reset();
-				binary_update = true;
-				raw_update    = true;
-				time_acc      = 0.0f;
-
-				reset_textures();
-
-				ir_histo.clear();
-				white_histo.clear();
-				srgb_histo.clear();
-
-				lraw_white_level = lraw->imgdata.color.maximum;
-
-				used_ir_balance_from_db = false;
-				used_aero_match_from_db = false;
-				if (use_database_ir_balance || use_database_aero_match)
+				auto &res = image_load->wait();
+				DEFER(image_load.reset());
+				if_let_ok (auto &img_data,
+				           res.if_err([](const lak::u8string &str) { ERROR(str); }))
 				{
-					if (auto it = ir_balance_db.find(lraw->imgdata.idata.make + " "_str +
-					                                 lraw->imgdata.idata.model);
-					    it != ir_balance_db.end())
-					{
-						if (use_database_ir_balance)
-						{
-							ir_balance.ir_in        = it->second.ir_in;
-							used_ir_balance_from_db = true;
-						}
-						if (use_database_aero_match)
-						{
-							ir_balance.aero_match   = it->second.aero_match;
-							used_aero_match_from_db = true;
-						}
-					}
+					raw_image.emplace(lak::move(img_data));
+					binary_update = true;
+					raw_update    = true;
+					time_acc      = 0.f;
+
+					reset_textures();
+
+					ir_histo.clear();
+					white_histo.clear();
+					srgb_histo.clear();
+
+					load_db_data();
 				}
 			}
 			ImGui::EndChild();
 		}
-		else if (binary.empty())
+		else if (!raw_image.has_value())
 		{
 			ImGui::BeginChild(
 			  "Mid", {-1, -1}, true, ImGuiWindowFlags_NoSavedSettings);
@@ -1341,7 +812,6 @@ struct main_window : lak::basic_window<main_window>
 				ir_histo    = lak::move(_ir_histo);
 				white_histo = lak::move(_white_histo);
 				srgb_histo  = lak::move(_srgb_histo);
-				lrawtex.emplace(lrawimg);
 				lrprocessedtex.emplace(lrpimg);
 				lrdebayertex.emplace(lrdimg);
 				lrsrgbtex.emplace(lrsrgbimg);
@@ -1423,25 +893,22 @@ struct main_window : lak::basic_window<main_window>
 
 				lak::VertSplitter(left_size, right_size, content_size.x);
 
-				ImGui::BeginChild(
-				  "ImgLeft", {left_size, -1}, true, ImGuiWindowFlags_NoSavedSettings);
-				ImGui::Text("%s %s + %s",
-				            lraw->imgdata.idata.make,
-				            lraw->imgdata.idata.model,
-				            lraw->imgdata.lens.Lens);
+				ImGui::BeginChild("ImgLeft",
+				                  {left_size, -1},
+				                  true,
+				                  ImGuiWindowFlags_NoSavedSettings |
+				                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+				const auto left_content_size{ImGui::GetContentRegionAvail()};
+				lak::Text<u8"{} {} + {} {}">(raw_image->camera.make,
+				                             raw_image->camera.model,
+				                             raw_image->lens.make,
+				                             raw_image->lens.model);
 				ImGui::Text("ISO %.0f 1/%.0fs f/%.0f %.0fmm",
-				            lraw->imgdata.other.iso_speed,
-				            1.0f / lraw->imgdata.other.shutter,
-				            lraw->imgdata.other.aperture,
-				            lraw->imgdata.other.focal_len);
-
-				ImGui::Separator();
-
-				ImGui::Text("Camera Settings");
-
-				ImGui::SliderInt(
-				  "White level", &lraw_white_level, 0, lraw->imgdata.color.maximum);
-				if (ImGui::IsItemDeactivatedAfterEdit()) raw_update = true;
+				            raw_image->iso,
+				            1.0f / raw_image->shutter,
+				            raw_image->aperture,
+				            raw_image->focal_length);
 
 				ImGui::Separator();
 
@@ -1567,65 +1034,19 @@ struct main_window : lak::basic_window<main_window>
 			}
 		}
 	}
-};
-
-struct rye_window : virtual public basic_window_api
-{
-	rye_window() : basic_window_api() {}
-
-	const lak::cobalt::graphics_context *gc;
-
-	virtual ~rye_window()
-	{
-		lraw.reset();
-		reset_textures();
-	}
-
-	virtual void init() override final
-	{
-		lak::debugger.crash_path = std::filesystem::current_path() /
-		                           "ATTACH-TO-ISSUE-ON-RYE-GITHUB-REPO.txt";
-
-		lak::debugger.live_output_enabled = true;
-
-		ASSERT_EQUAL(window().graphics(), lak::graphics_mode::Cobalt);
-		gc = &lak::cobalt_graphics_context(window().handle()).UNWRAP();
-		ASSERT(!!gc);
-
-		auto graphics_string = lak::fmt<"{} {}">(gc->api_family, gc->api_version);
-		DEBUG("Graphics: ", graphics_string);
-		if (!lak::debugger.live_output_enabled || lak::debugger.live_errors_only)
-			std::cout << "Graphics: " << graphics_string << "\n";
-
-		window().set_title(L"" APP_NAME);
-	}
-
-	virtual void handle_event(lak::event &event) override final
-	{
-		switch (event.type)
-		{
-			case lak::event_type::close_window:
-				destroy();
-				break;
-
-			case lak::event_type::dropfile:
-				load_binary_async(lak::fs::path(event.dropfile().path));
-				break;
-
-			default:
-				break;
-		}
-	}
-
-	main_window mwnd;
 
 	virtual void loop(uint64_t counter_delta) override final
 	{
 		const float frame_time =
 		  (float)counter_delta / lak::performance_frequency();
 
-		mwnd.draw(frame_time);
+		if (ImGui::BeginMenuBar())
+		{
+			menu_bar(frame_time);
+			ImGui::EndMenuBar();
+		}
 
+		main_region(frame_time);
 		if (binary_update)
 		{
 			window().set_title(L"" APP_NAME " (" + binary_path.generic_wstring() +
@@ -1705,8 +1126,6 @@ lak::error_code<int> basic_program_init()
 
 		window->clear_colour = {0.0f, 0.0f, 0.0f, 1.0f};
 	}
-
-	lraw.emplace();
 
 	return lak::ok_t{};
 }

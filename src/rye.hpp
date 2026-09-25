@@ -10,6 +10,7 @@ namespace rye
 {
 	enum struct sensor_format_t
 	{
+		rgb,
 		bayer,
 		xtrans,
 		foveon,
@@ -102,6 +103,28 @@ namespace rye
 	                              const lak::image<lak::vec3f_t> &src,
 	                              lak::vec2s_t offset,
 	                              lak::vec2s_t size);
+
+	lak::image<lak::vec3f_t> demosaic_bayer(
+	  lak::tasks &tasks,
+	  const lak::image<lak::vec3f_t> &src,
+	  lak::span<const lak::vec2s_t, 4U> channel_coords /* R G B G */,
+	  rye::image_flip_t flip);
+	lak::image<lak::vec3f_t> demosaic_bayer(
+	  const lak::image<lak::vec3f_t> &src,
+	  lak::span<const lak::vec2s_t, 4U> channel_coords /* R G B G */,
+	  rye::image_flip_t flip);
+
+	lak::image<lak::vec3f_t> demosaic_xtrans(lak::tasks &tasks,
+	                                         const lak::image<lak::vec3f_t> &src,
+	                                         rye::image_flip_t flip);
+	lak::image<lak::vec3f_t> demosaic_xtrans(const lak::image<lak::vec3f_t> &src,
+	                                         rye::image_flip_t flip);
+
+	lak::image<lak::vec3f_t> demosaic_foveon(lak::tasks &tasks,
+	                                         const lak::image<lak::vec3f_t> &src,
+	                                         rye::image_flip_t flip);
+	lak::image<lak::vec3f_t> demosaic_foveon(const lak::image<lak::vec3f_t> &src,
+	                                         rye::image_flip_t flip);
 
 	template<typename T>
 	T vec_max(lak::vec3<T> vec)
