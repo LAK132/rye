@@ -60,7 +60,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 			      return (data.type == lak::x3f::image_type::One ||
 			              data.type == lak::x3f::image_type::Three) &&
 			             (data.format == lak::x3f::image_format::x530 ||
-			              // data.format == lak::x3f::image_format::SD9_SD10_SD14 ||
+			              data.format == lak::x3f::image_format::SD9_SD10_SD14 ||
 			              data.format ==
 			                lak::x3f::image_format::DP1_DP1S_DP2_Merril ||
 			              data.format == lak::x3f::image_format::DP2_Quattro ||
@@ -71,6 +71,13 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 			break;
 	if (entry >= x3f.image_entries.size())
 		return lak::err_t{lak::fmt<u8"Missing raw entry">()};
+
+	lak::x3f::image_format format = x3f.image_entries[entry].versioned.visit(
+	  [&](const auto &data) { return data.format; });
+
+	if (format == lak::x3f::image_format::SD9_SD10_SD14)
+		return lak::err_t{
+		  lak::fmt<u8"SD9/SD10/SD14 raws are currently not supported">()};
 
 	for (size_t y = 0U; y < result.data.size().y; ++y)
 		for (size_t x = 0U; x < result.data.size().x; ++x)
