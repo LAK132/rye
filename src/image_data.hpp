@@ -21,10 +21,11 @@ namespace rye
 		lak::mat3f_t XYZ_to_cam        = lak::col::sRGB_primaries.XYZ_to_linear();
 		lak::vec3f_t whitebalance_coef = lak::vec3f_t(1.f);
 
-		float iso          = 0.f;
-		float shutter      = 0.f;
-		float aperture     = 0.f;
-		float focal_length = 0.f;
+		float iso               = 0.f;
+		float shutter           = 0.f;
+		float aperture          = 0.f;
+		float focal_length      = 0.f;
+		float focal_length_35mm = 0.f;
 
 		struct device_info
 		{

@@ -907,11 +907,13 @@ struct rye_window : virtual public basic_window_api
 				                             raw_image->camera.model,
 				                             raw_image->lens.make,
 				                             raw_image->lens.model);
-				ImGui::Text("ISO %.0f 1/%.0fs f/%.0f %.0fmm",
-				            raw_image->iso,
-				            1.0f / raw_image->shutter,
-				            raw_image->aperture,
-				            raw_image->focal_length);
+				lak::Text<u8"ISO {:.0} 1/{:.0}s f/{:.1} {:.1}mm ({:.1}mm)">(
+				  raw_image->iso,
+				  1.0f / raw_image->shutter,
+				  raw_image->aperture,
+				  raw_image->focal_length,
+				  raw_image->focal_length_35mm == 0.f ? raw_image->focal_length
+				                                      : raw_image->focal_length_35mm);
 
 				ImGui::Separator();
 

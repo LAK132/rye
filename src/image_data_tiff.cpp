@@ -217,6 +217,14 @@ lak::result<rye::image_data, lak::u8string> rye::load_tiff(
 		    float(data[0].numerator) / float(data[0].denominator);
 	  },
 
+	  [&](lak::tiff::tag_name_type<lak::tiff::tag_name::FocalLengthIn35mmFormat>,
+	      lak::span<const lak::tiff::urational> data)
+	  {
+		  if (data.empty()) return;
+		  result.focal_length_35mm =
+		    float(data[0].numerator) / float(data[0].denominator);
+	  },
+
 	  [&](lak::tiff::tag_name_type<lak::tiff::tag_name::Make>,
 	      lak::span<const char> data)
 	  { result.camera.make = lak::to_u8string(data.data(), data.size()); },

@@ -37,10 +37,11 @@ lak::result<rye::image_data, lak::u8string> rye::load_mdc(
 	  lak::col::sRGB_primaries.XYZ_to_linear() * result.cam_to_XYZ;
 	result.whitebalance_coef = lak::vec3f_t(1.f);
 
-	result.iso          = 800.f;
-	result.shutter      = mdc.settings.shutter_speed;
-	result.aperture     = mdc.settings.aperture;
-	result.focal_length = mdc.settings.focal_length;
+	result.iso               = 800.f;
+	result.shutter           = mdc.settings.shutter_speed;
+	result.aperture          = mdc.settings.aperture;
+	result.focal_length      = mdc.settings.focal_length;
+	result.focal_length_35mm = mdc.settings.focal_length * 2.f;
 
 	result.sensor = rye::sensor_format_t::rd175;
 
