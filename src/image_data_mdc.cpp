@@ -31,9 +31,10 @@ lak::result<rye::image_data, lak::u8string> rye::load_mdc(
 
 	result.data = mdc.process_vec3f();
 
-	result.cam_to_sRGB       = lak::diagonal(lak::vec3f_t(1.f));
-	result.cam_to_XYZ        = lak::col::sRGB_primaries.linear_to_XYZ();
-	result.XYZ_to_cam        = lak::col::sRGB_primaries.XYZ_to_linear();
+	result.cam_to_XYZ = lak::col::sRGB_primaries.linear_to_XYZ();
+	result.XYZ_to_cam = lak::inverse(result.cam_to_XYZ);
+	result.cam_to_sRGB =
+	  lak::col::sRGB_primaries.XYZ_to_linear() * result.cam_to_XYZ;
 	result.whitebalance_coef = lak::vec3f_t(1.f);
 
 	result.iso          = 800.f;

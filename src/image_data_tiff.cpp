@@ -488,15 +488,9 @@ lak::result<rye::image_data, lak::u8string> rye::load_tiff(
 	}
 
 	result.cam_to_XYZ = primaries.linear_to_XYZ();
-	result.XYZ_to_cam = primaries.XYZ_to_linear();
-
-	constexpr auto XYZ_to_sRGB = lak::col::sRGB_primaries.XYZ_to_linear();
-
-	result.cam_to_sRGB = lak::transpose(lak::mat3f_t{
-	  XYZ_to_sRGB * lak::col::cie::to_XYZ(primaries.r).to_vec(),
-	  XYZ_to_sRGB * lak::col::cie::to_XYZ(primaries.g).to_vec(),
-	  XYZ_to_sRGB * lak::col::cie::to_XYZ(primaries.b).to_vec(),
-	});
+	result.XYZ_to_cam = lak::inverse(result.cam_to_XYZ);
+	result.cam_to_sRGB =
+	  lak::col::sRGB_primaries.XYZ_to_linear() * result.cam_to_XYZ;
 
 	result.whitebalance_coef = lak::vec3f_t(1.f);
 

@@ -92,9 +92,10 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 	if (orientation != rye::image_flip_t::none)
 		result.data = rye::transform(tasks, result.data, orientation);
 
-	result.cam_to_sRGB       = lak::diagonal(lak::vec3f_t(1.f));
-	result.cam_to_XYZ        = lak::col::sRGB_primaries.linear_to_XYZ();
-	result.XYZ_to_cam        = lak::col::sRGB_primaries.XYZ_to_linear();
+	result.cam_to_XYZ = lak::col::sRGB_primaries.linear_to_XYZ();
+	result.XYZ_to_cam = lak::inverse(result.cam_to_XYZ);
+	result.cam_to_sRGB =
+	  lak::col::sRGB_primaries.XYZ_to_linear() * result.cam_to_XYZ;
 	result.whitebalance_coef = lak::vec3f_t(1.f);
 
 	result.sensor = rye::sensor_format_t::foveon;
