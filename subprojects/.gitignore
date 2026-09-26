@@ -1,26 +1,7 @@
-packagecache/**
+*
+*/
 
-SDL2/**
-glm/**
-imgui/**
-lak/**
-libraw/**
-lmdb/**
-lua*/**
-stb/**
-*-wrap/**
+!packagefiles/**
 
-Cobalt*.wrap
-glm*.wrap
-ImFileDialog*.wrap
-ImGuiColorTextEdit.wrap
-implot.wrap
-implot3d.wrap
-imgui*.wrap
-lmdb*.wrap
-lua*.wrap
-SDL2*.wrap
-stb*.wrap
-*-wrap.wrap
-
-.wraplock
+!lak.wrap
+!libraw.wrap
