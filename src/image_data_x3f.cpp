@@ -88,10 +88,6 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 	lak::x3f::image_format format = x3f.image_entries[entry].versioned.visit(
 	  [&](const auto &data) { return data.format; });
 
-	if (format == lak::x3f::image_format::SD9_SD10_SD14)
-		return lak::err_t{
-		  lak::fmt<u8"SD9/SD10/SD14 raws are currently not supported">()};
-
 	if (x3f.camf_entries.empty())
 		return lak::err_t{lak::fmt<u8"Missing CAMF">()};
 
