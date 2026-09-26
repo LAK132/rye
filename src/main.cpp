@@ -41,6 +41,7 @@
 
 bool force_only_error = false;
 
+lak::fs::path load_path;
 lak::fs::path binary_path;
 lak::optional<lak::future<lak::result<rye::image_data, lak::u8string>>>
   image_load;
@@ -139,6 +140,7 @@ void load_binary_async(const lak::fs::path &path)
 	lrsrgbimg.resize({0, 0});
 	lrwaveimg.resize({0, 0});
 	lrwave2img.resize({0, 0});
+	load_path  = path;
 	image_load = rye::load_image_async(path);
 }
 
@@ -784,6 +786,7 @@ struct rye_window : virtual public basic_window_api
 				           res.if_err([](const lak::u8string &str) { ERROR(str); }))
 				{
 					raw_image.emplace(lak::move(img_data));
+					binary_path   = load_path;
 					binary_update = true;
 					raw_update    = true;
 					time_acc      = 0.f;
