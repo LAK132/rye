@@ -446,6 +446,7 @@ struct rye_gpu_image_process_state
 	cobalt::graphics::IRenderableNode::unique_ptr renderable_node;
 
 	cobalt::graphics::ITexelArray::unique_ptr image_buffer;
+	cobalt::graphics::ITexelArrayOutput::unique_ptr image_capture;
 
 	// OpenGL always requires a sampler when dealing with textures
 	cobalt::graphics::ITextureSampler2D::unique_ptr sampler;
@@ -459,9 +460,7 @@ struct rye_gpu_image_process_state
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "camera_XYZ_to_scene_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                     "scene_XYZ_to_display_XYZ">,
-	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                     "XYZ_to_display">,
+	                                     "XYZ_to_scene">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M4Float32,
 	                                     "user_matrix">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::V3Float32,
@@ -476,16 +475,20 @@ struct rye_gpu_image_process_state
 	                                     "saturation">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::V1Float32, "hue">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                     "raw_white_balance">,
-	    lak::cobalt::state_value_binding<cobalt::graphics::V1Float32,
-	                                     "display_gamma">>,
+	                                     "raw_white_balance">>,
 	  lak::type_pack<
 	    lak::cobalt::texture_binding<cobalt::graphics::ITextureBuffer2D, "tex">>>
 	  compute_bindings;
 
-	lak::cobalt::program_state<
-	  lak::type_pack<lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32,
-	                                                  "image_size">>>
+	lak::cobalt::program_state<lak::type_pack<
+	  lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32, "image_size">,
+	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                   "scene_to_XYZ">,
+	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                   "scene_XYZ_to_display_XYZ">,
+	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                   "XYZ_to_display">,
+	  lak::cobalt::state_value_binding<cobalt::graphics::V1Float32, "gamma">>>
 	  display_bindings;
 
 	rye_gpu_image_process_state() = default;
@@ -497,6 +500,7 @@ struct rye_gpu_image_process_state
 	  vertex_buffer(lak::move(other.vertex_buffer)),
 	  renderable_node(lak::move(other.renderable_node)),
 	  image_buffer(lak::move(other.image_buffer)),
+	  image_capture(lak::move(other.image_capture)),
 	  sampler(lak::move(other.sampler)),
 	  display_bindings(lak::move(other.display_bindings)),
 	  compute_bindings(lak::move(other.compute_bindings))
@@ -511,6 +515,7 @@ struct rye_gpu_image_process_state
 		lak::swap(vertex_buffer, other.vertex_buffer);
 		lak::swap(renderable_node, other.renderable_node);
 		lak::swap(image_buffer, other.image_buffer);
+		lak::swap(image_capture, other.image_capture);
 		lak::swap(sampler, other.sampler);
 		lak::swap(display_bindings, other.display_bindings);
 		lak::swap(compute_bindings, other.compute_bindings);
@@ -558,6 +563,9 @@ struct rye_gpu_image_process_state
 		}
 		display_program.reset();
 
+		if (image_buffer && image_capture)
+			image_buffer->RemoveOutputCaptureTarget(image_capture.get());
+		image_capture.reset();
 		image_buffer.reset();
 		renderable_node.reset();
 		vertex_buffer.reset();
@@ -604,11 +612,15 @@ VSOutput main(VSInput IN)
 		auto fs = vs_out + R"(
 Buffer<float4> image_buffer;
 uniform uint2 image_size;
+uniform row_major float3x3 scene_to_XYZ;
+uniform row_major float3x3 scene_XYZ_to_display_XYZ;
+uniform row_major float3x3 XYZ_to_display;
+uniform float gamma;
 
-float4 get_pixel(int2 pixel)
+float3 get_pixel(int2 pixel)
 {
 	pixel = clamp(pixel, int2(0, 0), int2(image_size) - 1);
-	return image_buffer[pixel.x + (pixel.y * image_size.x)];
+	return image_buffer[pixel.x + (pixel.y * image_size.x)].xyz;
 }
 
 float4 main(VSOutput IN) : SV_Target
@@ -616,13 +628,17 @@ float4 main(VSOutput IN) : SV_Target
 	float2 coord = (IN.texCoord * float2(image_size)) - 0.5f;
 	int2 index = int2(floor(coord));
 	float2 weight = frac(coord);
-	float4 p00 = get_pixel(index);
-	float4 p01 = get_pixel(index + int2(0, 1));
-	float4 p10 = get_pixel(index + int2(1, 0));
-	float4 p11 = get_pixel(index + int2(1, 1));
-	float4 p0 = lerp(p00, p01, weight.y);
-	float4 p1 = lerp(p10, p11, weight.y);
-	return lerp(p0, p1, weight.x);
+	float3 p00 = get_pixel(index);
+	float3 p01 = get_pixel(index + int2(0, 1));
+	float3 p10 = get_pixel(index + int2(1, 0));
+	float3 p11 = get_pixel(index + int2(1, 1));
+	float3 p0 = lerp(p00, p01, weight.y);
+	float3 p1 = lerp(p10, p11, weight.y);
+	float3 p = lerp(p0, p1, weight.x);
+	p = scene_to_XYZ * p;
+	p = scene_XYZ_to_display_XYZ * p;
+	p = XYZ_to_display * p;
+	return float4(pow(p, 1.0f / gamma), 1.0f);
 })"_str;
 
 		auto cs = R"(
@@ -632,8 +648,7 @@ uniform uint2 image_size;
 
 uniform row_major float3x3 camera_to_XYZ;
 uniform row_major float3x3 camera_XYZ_to_scene_XYZ;
-uniform row_major float3x3 scene_XYZ_to_display_XYZ;
-uniform row_major float3x3 XYZ_to_display;
+uniform row_major float3x3 XYZ_to_scene;
 uniform row_major float4x4 user_matrix;
 uniform row_major float3x3 raw_white_balance;
 uniform float3 scene_white_XYZ;
@@ -642,7 +657,6 @@ uniform float contrast;
 uniform float lightness;
 uniform float saturation;
 uniform float hue;
-uniform float display_gamma;
 
 float3 XYZ_to_RGB(float3 colour)
 {
@@ -794,14 +808,10 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	colour = LCh_to_Luv(colour);
 	colour = Luv_to_XYZ(colour, XYZ_to_uvY(scene_white_XYZ));
 
-	colour = scene_XYZ_to_display_XYZ * colour;
-	colour = XYZ_to_display * colour;
+	colour = XYZ_to_scene * colour;
 
-	image_buffer[thread_id.y * image_size.x + thread_id.x] = float4(
-		pow(colour.x, 1.0f/display_gamma),
-		pow(colour.y, 1.0f/display_gamma),
-		pow(colour.z, 1.0f/display_gamma),
-		1.0f);
+	image_buffer[thread_id.y * image_size.x + thread_id.x] =
+		float4(colour, 1.0f);
 })"_str;
 
 		state.compute_program = rd->CreateShaderProgram();
@@ -866,6 +876,13 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		  cobalt::graphics::ITexelArray::UsageFlags::TransferSource);
 		if (!state.image_buffer->AllocateMemory())
 			return lak::err_t{u8"Failed to allocate processed image"_str};
+
+		state.image_capture = rd->CreateTexelArrayOutput();
+		if (!state.image_capture)
+			return lak::err_t{u8"Failed to create texel array output"_str};
+		state.image_capture->SetDetachAfterCapture(true);
+		state.image_capture->SetArrayCaptureRegion(size_t(image_size.X()) *
+		                                           size_t(image_size.Y()));
 
 		const auto compute_output =
 		  state.compute_program->GetResourceArrayId("image_buffer");
@@ -987,10 +1004,7 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
 		state.compute_bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings
-		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		    lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings.template set_state_value<"XYZ_to_display">(
+		state.compute_bindings.template set_state_value<"XYZ_to_scene">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
 		state.compute_bindings.template set_state_value<"user_matrix">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec4f_t(1.f))));
@@ -1003,7 +1017,15 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		state.compute_bindings.template set_state_value<"hue">(0.f);
 		state.compute_bindings.template set_state_value<"raw_white_balance">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings.template set_state_value<"display_gamma">(1.f);
+
+		state.display_bindings.template set_state_value<"scene_to_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.display_bindings
+		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
+		    lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.display_bindings.template set_state_value<"XYZ_to_display">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.display_bindings.template set_state_value<"gamma">(1.f);
 
 		return lak::move_ok(state);
 	}
@@ -1060,12 +1082,82 @@ struct rye_window : virtual public basic_window_api
 
 	void open_file(const lak::fs::path &path) { load_binary_async(path); }
 
-	void save_png_file(const lak::fs::path &path,
-	                   const lak::image<lak::vec3f_t> &img)
+	bool can_save_gpu_image() const
 	{
+		return !image_load && raw_image && finaltex &&
+		       image_viewport_state.image_buffer &&
+		       image_viewport_state.image_capture &&
+		       image_viewport_state.compute_pass_node &&
+		       image_viewport_state.compute_bindings.state_group_node;
+	}
+
+	lak::result<lak::image<lak::vec4f_t>, lak::u8string> read_gpu_image()
+	{
+		if (!can_save_gpu_image()) return lak::err_t{u8"No image to save"_str};
+
+		const auto size = lak::TextureSize(finaltex);
+		if (size.x == 0U || size.y == 0U)
+			return lak::err_t{u8"Cannot save an empty image"_str};
+
+		auto *rd = gc->renderer.get();
+		rd->WaitForDrawComplete();
+		rd->WaitForOutputCaptureComplete();
+
+		auto &state   = image_viewport_state;
+		auto &capture = state.image_capture;
+
+		capture->ClearCapturedOutput();
+		DEFER(capture->ClearCapturedOutput());
+
+		state.image_buffer->AddOutputCaptureTarget(capture.get());
+		DEFER(state.image_buffer->RemoveOutputCaptureTarget(capture.get()));
+
+		auto *compute_pass = state.compute_pass_node;
+		rd->SetRenderPasses(&compute_pass, 1);
+		DEFER(rd->RemoveAllRenderPasses());
+		rd->StartNewFrame();
+		rd->WaitForDrawComplete();
+		rd->WaitForOutputCaptureComplete();
+
+		if (!capture->HasCapturedOutput() ||
+		    capture->GetEntryCount() != size.x * size.y)
+			return lak::err_t{u8"Failed to capture the complete GPU image"_str};
+
+		lak::image<lak::vec4f_t> img;
+		img.resize(size);
+		if (!capture->ReadBufferData(
+		      img.data(),
+		      img.contig_size_bytes(),
+		      cobalt::graphics::ITexelArray::SourceImageFormat::RGBA,
+		      cobalt::graphics::ITexelArray::SourceDataFormat::Float32))
+			return lak::err_t{u8"Failed to read the GPU image"_str};
+
+		return lak::move_ok(img);
+	}
+
+	void save_png_file(const lak::fs::path &path, bool linear)
+	{
+		auto image = read_gpu_image();
+		if_let_err (const auto &error, image)
+		{
+			ERROR(error);
+			return;
+		}
+		const auto &img = image.UNWRAP();
+
 		lak::image3_t processedimg;
 		processedimg.resize(img.size());
 
+		auto to_srgb =
+		  [scene_to_XYZ = /*scene_primaries*/ camera_primaries.linear_to_XYZ(),
+		   adaption     = lak::col::cie::bradford_adaption_matrix(
+		     /*scene_primaries*/ camera_primaries.w, lak::col::sRGB_primaries.w)](
+		    const lak::vec3f_t &p) -> lak::vec3f_t
+		{
+			return lak::col::to_sRGB(
+			         lak::col::cie::XYZ::from_vec(adaption * (scene_to_XYZ * p)))
+			  .to_vec();
+		};
 		{
 			lak::tasks tasks{lak::tasks::hardware_max()};
 			for (size_t y = 0; y < img.size().y; ++y)
@@ -1073,31 +1165,48 @@ struct rye_window : virtual public basic_window_api
 				tasks.push(
 				  [&, y = y]()
 				  {
-					  for (size_t x = 0; x < img.size().x; ++x)
-					  {
-						  processedimg[{x, y}].r =
-						    lak::frac_to_int<uint8_t>(img[{x, y}].r);
-						  processedimg[{x, y}].g =
-						    lak::frac_to_int<uint8_t>(img[{x, y}].g);
-						  processedimg[{x, y}].b =
-						    lak::frac_to_int<uint8_t>(img[{x, y}].b);
-					  }
+					  if (linear)
+						  for (size_t x = 0; x < img.size().x; ++x)
+						  {
+							  processedimg[{x, y}].r =
+							    lak::frac_to_int<uint8_t>(img[{x, y}].r);
+							  processedimg[{x, y}].g =
+							    lak::frac_to_int<uint8_t>(img[{x, y}].g);
+							  processedimg[{x, y}].b =
+							    lak::frac_to_int<uint8_t>(img[{x, y}].b);
+						  }
+					  else
+						  for (size_t x = 0; x < img.size().x; ++x)
+						  {
+							  auto srgb              = to_srgb(img[{x, y}].xyz());
+							  processedimg[{x, y}].r = lak::frac_to_int<uint8_t>(srgb.r);
+							  processedimg[{x, y}].g = lak::frac_to_int<uint8_t>(srgb.g);
+							  processedimg[{x, y}].b = lak::frac_to_int<uint8_t>(srgb.b);
+						  }
 				  });
 			}
 		}
 
-		stbi_write_png(
-		  (const char *)path.u8string().c_str(),
-		  int(processedimg.size().x),
-		  int(processedimg.size().y),
-		  3,
-		  processedimg.data(),
-		  int(processedimg.contig_size_bytes() / processedimg.size().y));
+		if (!stbi_write_png(
+		      (const char *)path.u8string().c_str(),
+		      int(processedimg.size().x),
+		      int(processedimg.size().y),
+		      3,
+		      processedimg.data(),
+		      int(processedimg.contig_size_bytes() / processedimg.size().y)))
+			ERROR("Failed to save PNG");
 	}
 
-	void save_dng_file(const lak::fs::path &path,
-	                   const lak::image<lak::vec3f_t> &img)
+	void save_dng_file(const lak::fs::path &path)
 	{
+		auto image = read_gpu_image();
+		if_let_err (const auto &error, image)
+		{
+			ERROR(error);
+			return;
+		}
+		const auto &img = image.unsafe_unwrap();
+
 		lak::binary_array_writer strm;
 
 		lak::tiff::tiff tiff;
@@ -1132,7 +1241,8 @@ struct rye_window : virtual public basic_window_api
 		[[maybe_unused]] size_t img_size_bytes = img16.size().y * row_size_bytes;
 
 		// strips may not exceed 64KB decompressed
-		ifd0.rows = static_cast<uint32_t>(64'000U / row_size_bytes);
+		ifd0.rows =
+		  static_cast<uint32_t>(std::max<size_t>(1U, 64'000U / row_size_bytes));
 		ASSERT_GREATER(ifd0.rows, 0U);
 		size_t strip_count = lak::ceil_div<size_t>(img16.size().y, ifd0.rows);
 		ASSERT_GREATER(strip_count, 0U);
@@ -1144,8 +1254,8 @@ struct rye_window : virtual public basic_window_api
 			size_t row_start = s * ifd0.rows;
 			size_t row_end = std::min<size_t>(row_start + ifd0.rows, img16.size().y);
 
-			size_t begin = row_start * lrdimg.size().x;
-			size_t count = (row_end - row_start) * lrdimg.size().x;
+			size_t begin = row_start * img16.size().x;
+			size_t count = (row_end - row_start) * img16.size().x;
 
 			ifd0_strip.data.resize((row_end - row_start) * row_size_bytes);
 			lak::binary_span_writer{lak::span(ifd0_strip.data)}
@@ -1208,7 +1318,7 @@ struct rye_window : virtual public basic_window_api
 
 		strm.write<lak::endian::native>(tiff).UNWRAP();
 
-		lak::save_file(path, strm.data);
+		if (!lak::save_file(path, strm.data)) ERROR("Failed to save DNG");
 	}
 
 	const lak::fs::path &file_path() { return binary_path; }
@@ -1222,18 +1332,18 @@ struct rye_window : virtual public basic_window_api
 	{
 		if (auto res = open_pgetter(); res) open_file(*res);
 		if (auto res = save_png_pgetter(); res)
-			save_png_file(*res, save_srgb_png ? lrsrgbimg : lrdimg);
-		if (auto res = save_dng_pgetter(); res) save_dng_file(*res, lrdimg);
+			save_png_file(*res, !save_srgb_png);
+		if (auto res = save_dng_pgetter(); res) save_dng_file(*res);
 
 		if (ImGui::BeginMenu("File"))
 		{
+			const bool can_save = can_save_gpu_image();
 			if (ImGui::MenuItem("Open...", nullptr, false))
 				open_pgetter.open_file(
 				  file_path(),
 				  "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2,.DNG,.X3F},.*");
 
-			if (ImGui::MenuItem(
-			      "Save DNG...", nullptr, false, lrdimg.contig_size() != 0U))
+			if (ImGui::MenuItem("Save DNG...", nullptr, false, can_save))
 			{
 				save_dng_pgetter.save_file(
 				  file_path().parent_path() /
@@ -1241,10 +1351,7 @@ struct rye_window : virtual public basic_window_api
 				  "Image Files{.DNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (linear)...",
-			                    nullptr,
-			                    false,
-			                    lrdimg.contig_size() != 0U))
+			if (ImGui::MenuItem("Save PNG (linear)...", nullptr, false, can_save))
 			{
 				save_srgb_png = false;
 				save_png_pgetter.save_file(
@@ -1253,10 +1360,7 @@ struct rye_window : virtual public basic_window_api
 				  "Image Files{.PNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (sRGB)...",
-			                    nullptr,
-			                    false,
-			                    lrsrgbimg.contig_size() != 0U))
+			if (ImGui::MenuItem("Save PNG (sRGB)...", nullptr, false, can_save))
 			{
 				save_srgb_png = true;
 				save_png_pgetter.save_file(
@@ -1531,6 +1635,20 @@ struct rye_window : virtual public basic_window_api
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      scene_primaries.w, camera_primaries.w)));
+
+		update_scene_colour_space();
+	}
+
+	void update_scene_colour_space()
+	{
+		// image_viewport_state.compute_bindings
+		//   .template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ() *
+		//                           camera_primaries.XYZ_to_linear()));
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		      scene_primaries.w, camera_primaries.w)));
 		// image_viewport_state.compute_bindings.template
 		// set_state_value<"scene_white_XYZ">(
 		//   lak::cobalt::from_lak(scene_primaries.w_XYZ().to_vec()));
@@ -1539,10 +1657,24 @@ struct rye_window : virtual public basic_window_api
 		    lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
 
 		// image_viewport_state.compute_bindings
+		//   .template set_state_value<"XYZ_to_scene">(
+		//     lak::cobalt::from_lak(scene_primaries.XYZ_to_linear()));
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"XYZ_to_scene">(
+		    lak::cobalt::from_lak(camera_primaries.XYZ_to_linear()));
+
+		// image_viewport_state.display_bindings
+		//   .template set_state_value<"scene_to_XYZ">(
+		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ()));
+		image_viewport_state.display_bindings
+		  .template set_state_value<"scene_to_XYZ">(
+		    lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
+
+		// image_viewport_state.display_bindings
 		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.compute_bindings
+		image_viewport_state.display_bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
@@ -1550,20 +1682,21 @@ struct rye_window : virtual public basic_window_api
 
 	void update_display_colour_space()
 	{
-		image_viewport_state.compute_bindings
+		image_viewport_state.display_bindings
 		  .template set_state_value<"XYZ_to_display">(
 		    lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
 
-		// image_viewport_state.compute_bindings
+		// image_viewport_state.display_bindings
 		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.compute_bindings
+		image_viewport_state.display_bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
-		image_viewport_state.compute_bindings
-		  .template set_state_value<"display_gamma">(display_gamma);
+
+		image_viewport_state.display_bindings.template set_state_value<"gamma">(
+		  display_gamma);
 	}
 
 	void update_camera_white_balance()
@@ -2155,7 +2288,11 @@ struct rye_window : virtual public basic_window_api
 						scene_primaries        = camera_primaries;
 						update_scene_primaries = true;
 					}
-					if (update_scene_primaries) calculate_scene_colour_space();
+					if (update_scene_primaries)
+					{
+						calculate_scene_colour_space();
+						update_scene_colour_space();
+					}
 					lak::Text<
 					  u8"r: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
 					  "g: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
