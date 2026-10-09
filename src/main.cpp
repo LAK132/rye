@@ -438,7 +438,7 @@ void process_image_async(int white_level,
 
 struct rye_gpu_image_process_state
 {
-	cobalt::graphics::IRenderPassNode *compute_pass_node = nullptr;
+	cobalt::graphics::IRenderPassNode::unique_ptr compute_pass_node;
 	cobalt::graphics::IRenderPassNode *display_pass_node = nullptr;
 	cobalt::graphics::IShaderProgram::unique_ptr compute_program;
 	cobalt::graphics::IShaderProgram::unique_ptr display_program;
@@ -493,7 +493,7 @@ struct rye_gpu_image_process_state
 
 	rye_gpu_image_process_state() = default;
 	rye_gpu_image_process_state(rye_gpu_image_process_state &&other)
-	: compute_pass_node(lak::exchange(other.compute_pass_node, nullptr)),
+	: compute_pass_node(lak::move(other.compute_pass_node)),
 	  display_pass_node(lak::exchange(other.display_pass_node, nullptr)),
 	  compute_program(lak::move(other.compute_program)),
 	  display_program(lak::move(other.display_program)),
@@ -532,7 +532,7 @@ struct rye_gpu_image_process_state
 		if (compute_pass_node)
 		{
 			compute_pass_node->RemoveAllChildNodes();
-			compute_pass_node = nullptr;
+			compute_pass_node.reset();
 		}
 		if (compute_bindings.program_node)
 		{
@@ -573,7 +573,6 @@ struct rye_gpu_image_process_state
 
 	static lak::result<rye_gpu_image_process_state, lak::u8string> make(
 	  lak::window &wnd,
-	  cobalt::graphics::IRenderPassNode *compute_pass_node,
 	  cobalt::graphics::IRenderPassNode *display_pass_node,
 	  cobalt::graphics::ITextureBuffer2D *source_texture)
 	{
@@ -582,7 +581,9 @@ struct rye_gpu_image_process_state
 
 		rye_gpu_image_process_state state;
 
-		state.compute_pass_node = compute_pass_node;
+		state.compute_pass_node = rd->CreateRenderPassNode();
+		state.compute_pass_node->BindFrameBuffer(nullptr);
+
 		state.display_pass_node = display_pass_node;
 
 		auto vs_in  = R"(
@@ -1036,6 +1037,7 @@ struct rye_window : virtual public basic_window_api
 	rye_window() : basic_window_api() {}
 
 	const lak::cobalt::graphics_context *gc;
+	bool run_compute = false;
 
 	virtual ~rye_window()
 	{
@@ -1100,8 +1102,8 @@ struct rye_window : virtual public basic_window_api
 			return lak::err_t{u8"Cannot save an empty image"_str};
 
 		auto *rd = gc->renderer.get();
-		rd->WaitForDrawComplete();
 		rd->WaitForOutputCaptureComplete();
+		DEFER(rd->WaitForDeferredDeletionComplete());
 
 		auto &state   = image_viewport_state;
 		auto &capture = state.image_capture;
@@ -1112,11 +1114,10 @@ struct rye_window : virtual public basic_window_api
 		state.image_buffer->AddOutputCaptureTarget(capture.get());
 		DEFER(state.image_buffer->RemoveOutputCaptureTarget(capture.get()));
 
-		auto *compute_pass = state.compute_pass_node;
+		auto *compute_pass = state.compute_pass_node.get();
 		rd->SetRenderPasses(&compute_pass, 1);
 		DEFER(rd->RemoveAllRenderPasses());
 		rd->StartNewFrame();
-		rd->WaitForDrawComplete();
 		rd->WaitForOutputCaptureComplete();
 
 		if (!capture->HasCapturedOutput() ||
@@ -1151,7 +1152,7 @@ struct rye_window : virtual public basic_window_api
 		auto to_srgb =
 		  [scene_to_XYZ = /*scene_primaries*/ camera_primaries.linear_to_XYZ(),
 		   adaption     = lak::col::cie::bradford_adaption_matrix(
-		     /*scene_primaries*/ camera_primaries.w, lak::col::sRGB_primaries.w)](
+         /*scene_primaries*/ camera_primaries.w, lak::col::sRGB_primaries.w)](
 		    const lak::vec3f_t &p) -> lak::vec3f_t
 		{
 			return lak::col::to_sRGB(
@@ -1637,6 +1638,8 @@ struct rye_window : virtual public basic_window_api
 		      scene_primaries.w, camera_primaries.w)));
 
 		update_scene_colour_space();
+
+		run_compute = true;
 	}
 
 	void update_scene_colour_space()
@@ -1678,6 +1681,8 @@ struct rye_window : virtual public basic_window_api
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
+
+		run_compute = true;
 	}
 
 	void update_display_colour_space()
@@ -1706,6 +1711,8 @@ struct rye_window : virtual public basic_window_api
 		image_viewport_state.compute_bindings
 		  .template set_state_value<"raw_white_balance">(
 		    lak::cobalt::from_lak(raw_wb));
+
+		run_compute = true;
 	}
 
 	void main_region(float frame_time)
@@ -1759,7 +1766,7 @@ struct rye_window : virtual public basic_window_api
 					calculate_camera_white_balance();
 					// calculate_scene_colour_space();
 					scene_primaries   = camera_primaries;
-					display_primaries = camera_primaries;
+					display_primaries = lak::col::sRGB_primaries; // camera_primaries;
 				}
 			}
 			ImGui::EndChild();
@@ -1970,6 +1977,7 @@ struct rye_window : virtual public basic_window_api
 					image_viewport_state.compute_bindings
 					  .template set_state_value<"user_matrix">(
 					    lak::cobalt::from_lak(user_mat));
+					run_compute = true;
 				}
 
 				ImGui::Separator();
@@ -2047,6 +2055,7 @@ struct rye_window : virtual public basic_window_api
 						image_viewport_state.compute_bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
+						run_compute = true;
 					}
 					ImGui::Separator();
 				}
@@ -2064,9 +2073,12 @@ struct rye_window : virtual public basic_window_api
 					  "H##user_matrix_w", &user_mat.w.x, 0.05f, -10.f, 10.f);
 
 					if (update_user)
+					{
 						image_viewport_state.compute_bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
+						run_compute = true;
+					}
 					ImGui::Separator();
 				}
 
@@ -2221,30 +2233,35 @@ struct rye_window : virtual public basic_window_api
 				{
 					image_viewport_state.compute_bindings
 					  .template set_state_value<"exposure">(exposure);
+					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Contrast", &contrast, 0.1f, -1000.f, 1000.f))
 				{
 					image_viewport_state.compute_bindings
 					  .template set_state_value<"contrast">(contrast);
+					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Lightness", &lightness, 0.1f, -1000.f, 1000.f))
 				{
 					image_viewport_state.compute_bindings
 					  .template set_state_value<"lightness">(lightness);
+					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Saturation", &saturation, 0.1f, -1000.f, 1000.f))
 				{
 					image_viewport_state.compute_bindings
 					  .template set_state_value<"saturation">(saturation);
+					run_compute = true;
 				}
 
 				// if (ImGui::DragFloat("Hue (degrees)", &hue, 1.f, -360.f, 360.f))
 				// {
 				// 	image_viewport_state.compute_bindings.template
 				// set_state_value<"hue">(hue);
+				// run_compute = true;
 				// }
 
 				ImGui::Separator();
@@ -2439,11 +2456,6 @@ struct rye_window : virtual public basic_window_api
 
 					if (vpd.passes->empty())
 					{
-						// :FIXME: for compatibility reasons compute passes cannot be
-						// mixed with regular passes!
-						auto *compute_pass = vpd.append_pass();
-						compute_pass->BindFrameBuffer(nullptr);
-
 						auto clear_pass = vpd.append_pass();
 						clear_pass->SetAttachmentClearData(
 						  cobalt::graphics::IFrameBuffer::AttachmentType::Color,
@@ -2458,7 +2470,6 @@ struct rye_window : virtual public basic_window_api
 						image_viewport_state =
 						  rye_gpu_image_process_state::make(
 						    window(),
-						    compute_pass,
 						    display_pass,
 						    ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
 						    .UNWRAP();
@@ -2527,8 +2538,16 @@ struct rye_window : virtual public basic_window_api
 						// 	  image_viewport_state.temperature,
 						// 	  lak::cobalt::from_lak(temp_balance));
 						// }
+						run_compute = true;
 					}
 					// rye_image_view(lrsrgbtex, &lrawsrgbtex_size);
+
+					if (run_compute && image_viewport_state.compute_pass_node)
+					{
+						lak::cobalt_append_compute_pass(
+						  window().handle(), image_viewport_state.compute_pass_node.get());
+						run_compute = false;
+					}
 				}
 				ImGui::EndChild();
 			}
