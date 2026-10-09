@@ -1075,18 +1075,12 @@ struct rye_window : virtual public basic_window_api
 				  {
 					  for (size_t x = 0; x < img.size().x; ++x)
 					  {
-						  auto clamp = [](float f) -> uint8_t
-						  {
-							  if (f >= 1.f)
-								  return 255;
-							  else if (f <= 0.f)
-								  return 0;
-							  else
-								  return static_cast<uint8_t>(f * 255.f);
-						  };
-						  processedimg[{x, y}].r = clamp(img[{x, y}].r);
-						  processedimg[{x, y}].g = clamp(img[{x, y}].g);
-						  processedimg[{x, y}].b = clamp(img[{x, y}].b);
+						  processedimg[{x, y}].r =
+						    lak::frac_to_int<uint8_t>(img[{x, y}].r);
+						  processedimg[{x, y}].g =
+						    lak::frac_to_int<uint8_t>(img[{x, y}].g);
+						  processedimg[{x, y}].b =
+						    lak::frac_to_int<uint8_t>(img[{x, y}].b);
 					  }
 				  });
 			}
@@ -1101,7 +1095,8 @@ struct rye_window : virtual public basic_window_api
 		  int(processedimg.contig_size_bytes() / processedimg.size().y));
 	}
 
-	void save_dng_file(const lak::fs::path &path)
+	void save_dng_file(const lak::fs::path &path,
+	                   const lak::image<lak::vec3f_t> &img)
 	{
 		lak::binary_array_writer strm;
 
@@ -1117,15 +1112,15 @@ struct rye_window : virtual public basic_window_api
 		auto &ifd0       = tiff.ifd.emplace_back();
 
 		lak::image<lak::vec3u16_t> img16;
-		img16.resize(lrdimg.size());
+		img16.resize(img.size());
 
 		for (lak::vec2s_t xy = {0, 0}; xy.y < img16.size().y; ++xy.y)
 		{
 			for (xy.x = 0; xy.x < img16.size().x; ++xy.x)
 			{
-				img16[xy].r = lak::frac_to_int<uint16_t>(lrdimg[xy].r);
-				img16[xy].g = lak::frac_to_int<uint16_t>(lrdimg[xy].g);
-				img16[xy].b = lak::frac_to_int<uint16_t>(lrdimg[xy].b);
+				img16[xy].r = lak::frac_to_int<uint16_t>(img[xy].r);
+				img16[xy].g = lak::frac_to_int<uint16_t>(img[xy].g);
+				img16[xy].b = lak::frac_to_int<uint16_t>(img[xy].b);
 			}
 		}
 
@@ -1228,7 +1223,7 @@ struct rye_window : virtual public basic_window_api
 		if (auto res = open_pgetter(); res) open_file(*res);
 		if (auto res = save_png_pgetter(); res)
 			save_png_file(*res, save_srgb_png ? lrsrgbimg : lrdimg);
-		if (auto res = save_dng_pgetter(); res) save_dng_file(*res);
+		if (auto res = save_dng_pgetter(); res) save_dng_file(*res, lrdimg);
 
 		if (ImGui::BeginMenu("File"))
 		{
