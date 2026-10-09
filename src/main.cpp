@@ -438,15 +438,19 @@ void process_image_async(int white_level,
 
 struct rye_gpu_image_process_state
 {
-	cobalt::graphics::IRenderPassNode *render_pass_node = nullptr;
-	cobalt::graphics::IShaderProgram::unique_ptr shader_program;
+	cobalt::graphics::IRenderPassNode *compute_pass_node = nullptr;
+	cobalt::graphics::IRenderPassNode *display_pass_node = nullptr;
+	cobalt::graphics::IShaderProgram::unique_ptr compute_program;
+	cobalt::graphics::IShaderProgram::unique_ptr display_program;
 	cobalt::graphics::IVertexBuffer::unique_ptr vertex_buffer;
 	cobalt::graphics::IRenderableNode::unique_ptr renderable_node;
 
-	cobalt::graphics::ITextureSampler2D::unique_ptr sampler;
+	cobalt::graphics::ITexelArray::unique_ptr image_buffer;
 
 	lak::cobalt::program_state<
 	  lak::type_pack<
+	    lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32,
+	                                     "image_size">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "camera_to_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
@@ -474,26 +478,37 @@ struct rye_gpu_image_process_state
 	                                     "display_gamma">>,
 	  lak::type_pack<
 	    lak::cobalt::texture_binding<cobalt::graphics::ITextureBuffer2D, "tex">>>
-	  bindings;
+	  compute_bindings;
+
+	lak::cobalt::program_state<
+	  lak::type_pack<lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32,
+	                                                  "image_size">>>
+	  display_bindings;
 
 	rye_gpu_image_process_state() = default;
 	rye_gpu_image_process_state(rye_gpu_image_process_state &&other)
-	: render_pass_node(lak::exchange(other.render_pass_node, nullptr)),
-	  shader_program(lak::move(other.shader_program)),
+	: compute_pass_node(lak::exchange(other.compute_pass_node, nullptr)),
+	  display_pass_node(lak::exchange(other.display_pass_node, nullptr)),
+	  compute_program(lak::move(other.compute_program)),
+	  display_program(lak::move(other.display_program)),
 	  vertex_buffer(lak::move(other.vertex_buffer)),
 	  renderable_node(lak::move(other.renderable_node)),
-	  sampler(lak::move(other.sampler)),
-	  bindings(lak::move(other.bindings))
+	  image_buffer(lak::move(other.image_buffer)),
+	  display_bindings(lak::move(other.display_bindings)),
+	  compute_bindings(lak::move(other.compute_bindings))
 	{
 	}
 	rye_gpu_image_process_state &operator=(rye_gpu_image_process_state &&other)
 	{
-		lak::swap(render_pass_node, other.render_pass_node);
-		lak::swap(shader_program, other.shader_program);
+		lak::swap(compute_pass_node, other.compute_pass_node);
+		lak::swap(display_pass_node, other.display_pass_node);
+		lak::swap(compute_program, other.compute_program);
+		lak::swap(display_program, other.display_program);
 		lak::swap(vertex_buffer, other.vertex_buffer);
 		lak::swap(renderable_node, other.renderable_node);
-		lak::swap(sampler, other.sampler);
-		lak::swap(bindings, other.bindings);
+		lak::swap(image_buffer, other.image_buffer);
+		lak::swap(display_bindings, other.display_bindings);
+		lak::swap(compute_bindings, other.compute_bindings);
 		return *this;
 	}
 	rye_gpu_image_process_state(const rye_gpu_image_process_state &) = delete;
@@ -504,45 +519,73 @@ struct rye_gpu_image_process_state
 
 	void clear()
 	{
-		if (render_pass_node) render_pass_node->RemoveAllChildNodes();
-		if (bindings.program_node) bindings.program_node->RemoveAllChildNodes();
-		if (bindings.state_group_node)
-			bindings.state_group_node->RemoveAllChildNodes();
+		if (compute_pass_node)
+		{
+			compute_pass_node->RemoveAllChildNodes();
+			compute_pass_node = nullptr;
+		}
+		if (compute_bindings.program_node)
+		{
+			compute_bindings.program_node->RemoveAllChildNodes();
+			compute_bindings.program_node.reset();
+		}
+		if (compute_bindings.state_group_node)
+		{
+			compute_bindings.state_group_node->RemoveAllChildNodes();
+			compute_bindings.state_group_node.reset();
+		}
+		compute_program.reset();
 
-		render_pass_node = nullptr;
-		bindings.program_node.reset();
-		bindings.state_group_node.reset();
+		if (display_pass_node)
+		{
+			display_pass_node->RemoveAllChildNodes();
+			display_pass_node = nullptr;
+		}
+		if (display_bindings.program_node)
+		{
+			display_bindings.program_node->RemoveAllChildNodes();
+			display_bindings.program_node.reset();
+		}
+		if (display_bindings.state_group_node)
+		{
+			display_bindings.state_group_node->RemoveAllChildNodes();
+			display_bindings.state_group_node.reset();
+		}
+		display_program.reset();
 
-		shader_program.reset();
+		image_buffer.reset();
 		renderable_node.reset();
 		vertex_buffer.reset();
 	}
-};
 
-lak::result<rye_gpu_image_process_state, lak::u8string> hello_cobalt_triangle(
-  lak::window &wnd, cobalt::graphics::IRenderPassNode *render_pass_node)
-{
-	const auto &cgx = lak::cobalt_graphics_context(wnd.handle()).UNWRAP();
-	auto *rd        = cgx.renderer.get();
+	lak::result<rye_gpu_image_process_state, lak::u8string> make(
+	  lak::window &wnd,
+	  cobalt::graphics::IRenderPassNode *compute_pass_node,
+	  cobalt::graphics::IRenderPassNode *display_pass_node,
+	  cobalt::graphics::ITextureBuffer2D *source_texture)
+	{
+		const auto &cgx = lak::cobalt_graphics_context(wnd.handle()).UNWRAP();
+		auto *rd        = cgx.renderer.get();
 
-	rye_gpu_image_process_state state;
+		rye_gpu_image_process_state state;
 
-	state.render_pass_node = render_pass_node;
+		state.compute_pass_node = compute_pass_node;
+		state.display_pass_node = display_pass_node;
 
-	auto vs_in  = R"(
+		auto vs_in  = R"(
 struct VSInput
 {
 	float2 position : position;
 	float2 texCoord : texCoord;
 };)"_str;
-	auto vs_out = R"(
+		auto vs_out = R"(
 struct VSOutput
 {
 	float4 position : SV_POSITION;
 	float2 texCoord : TEXCOORD0;
 };)"_str;
 
-	auto vs = vs_in + vs_out + R"(
+		auto vs = vs_in + vs_out + R"(
 VSOutput main(VSInput IN)
 {
 	VSOutput OUT;
@@ -553,9 +596,34 @@ VSOutput main(VSInput IN)
 	return OUT;
 })"_str;
 
-	auto fs = vs_out + R"(
-uniform Texture2D tex;
-uniform SamplerState tex_CombinedSampler;
+		auto fs = vs_out + R"(
+Buffer<float4> image_buffer;
+uniform uint2 image_size;
+
+float4 get_pixel(int2 pixel)
+{
+	pixel = clamp(pixel, int2(0, 0), int2(image_size) - 1);
+	return image_buffer[pixel.x + (pixel.y * image_size.x)];
+}
+
+float4 main(VSOutput IN) : SV_Target
+{
+	float2 coord = (IN.texCoord * float2(image_size)) - 0.5f;
+	int2 index = int2(floor(coord));
+	float2 weight = frac(coord);
+	float4 p00 = get_pixel(index);
+	float4 p01 = get_pixel(index + int2(0, 1));
+	float4 p10 = get_pixel(index + int2(1, 0));
+	float4 p11 = get_pixel(index + int2(1, 1));
+	float4 p0 = lerp(p00, p01, weight.y);
+	float4 p1 = lerp(p10, p11, weight.y);
+	return lerp(p0, p1, weight.x);
+})"_str;
+
+		auto cs = R"(
+uniform Texture2D<float4> tex;
+RWBuffer<float4> image_buffer;
+uniform uint2 image_size;
 
 uniform row_major float3x3 camera_to_XYZ;
 uniform row_major float3x3 camera_XYZ_to_scene_XYZ;
@@ -689,9 +757,12 @@ float sigmoid(float k, float t)
 	return _sigmoid(k, t);
 }
 
-float4 main(VSOutput IN) : SV_Target
+[numthreads(16, 16, 1)]
+void main(uint3 thread_id : SV_DispatchThreadID)
 {
-	float3 colour = tex.Sample(tex_CombinedSampler, IN.texCoord).xyz;
+	if (any(thread_id.xy >= image_size)) return;
+
+	float3 colour = tex.Load(int3(thread_id.xy, 0)).xyz;
 	colour = raw_white_balance * colour;
 	float4 colour4 = user_matrix * float4(colour, 1.0f);
 	colour = colour4.xyz / colour4.w;
@@ -721,170 +792,212 @@ float4 main(VSOutput IN) : SV_Target
 	colour = scene_XYZ_to_display_XYZ * colour;
 	colour = XYZ_to_display * colour;
 
-	return float4(
+	image_buffer[thread_id.y * image_size.x + thread_id.x] = float4(
 		pow(colour.x, 1.0f/display_gamma),
 		pow(colour.y, 1.0f/display_gamma),
 		pow(colour.z, 1.0f/display_gamma),
 		1.0f);
-
 })"_str;
 
-	state.shader_program = rd->CreateShaderProgram();
+		state.compute_program = rd->CreateShaderProgram();
+		if (!state.compute_program->LoadShaderStage(
+		      cobalt::graphics::IShaderProgram::ShaderStage::Compute,
+		      lak::cobalt::shader_source_hlsl(cs)))
+		{
+			ERROR("Loading compute shader stage failed");
+			return lak::err_t{u8"Loading compute shader stage failed"_str};
+		}
+		if (!state.compute_program->CompileProgram())
+		{
+			ERROR("Failed to compile compute shader");
+			return lak::err_t{u8"Failed to compile compute shader"_str};
+		}
 
-	if (!state.shader_program->LoadShaderStage(
-	      cobalt::graphics::IShaderProgram::ShaderStage::Vertex,
-	      lak::cobalt::shader_source_hlsl(vs)))
-	{
-		ERROR("Loading vertex shader stage failed");
-		return lak::err_t{u8"Loading vertex shader stage failed"_str};
+		state.display_program = rd->CreateShaderProgram();
+
+		if (!state.display_program->LoadShaderStage(
+		      cobalt::graphics::IShaderProgram::ShaderStage::Vertex,
+		      lak::cobalt::shader_source_hlsl(vs)))
+		{
+			ERROR("Loading vertex shader stage failed");
+			return lak::err_t{u8"Loading vertex shader stage failed"_str};
+		}
+		if (!state.display_program->LoadShaderStage(
+		      cobalt::graphics::IShaderProgram::ShaderStage::Fragment,
+		      lak::cobalt::shader_source_hlsl(fs)))
+		{
+			ERROR("Loading fragment shader stage failed");
+			return lak::err_t{u8"Loading fragment shader stage failed"_str};
+		}
+
+		if (!state.display_program->CompileProgram())
+		{
+			ERROR("Failed to compile shader");
+			return lak::err_t{u8"Failed to compile shader"_str};
+		}
+
+		state.compute_bindings =
+		  state.compute_bindings.make(rd, state.compute_program.get()).UNWRAP();
+		state.display_bindings =
+		  state.display_bindings.make(rd, state.display_program.get()).UNWRAP();
+
+		const auto image_size = source_texture->MipmapLevelDimensions(0);
+		if (image_size.X() == 0U || image_size.Y() == 0U)
+			return lak::err_t{u8"Cannot process an empty image"_str};
+
+		state.image_buffer = rd->CreateTexelArray();
+		state.image_buffer->SetBufferLayout(
+		  cobalt::graphics::ITexelArray::ImageFormat::RGBA,
+		  cobalt::graphics::ITexelArray::DataFormat::Float32,
+		  size_t(image_size.X()) * size_t(image_size.Y()));
+		state.image_buffer->SetUsageFlags(
+		  cobalt::graphics::ITexelArray::UsageFlags::ShaderInput |
+		  cobalt::graphics::ITexelArray::UsageFlags::ShaderOutput |
+		  cobalt::graphics::ITexelArray::UsageFlags::TransferSource);
+		if (!state.image_buffer->AllocateMemory())
+			return lak::err_t{u8"Failed to allocate processed image"_str};
+
+		const auto compute_output =
+		  state.compute_program->GetResourceArrayId("image_buffer");
+		const auto display_input =
+		  state.display_program->GetResourceArrayId("image_buffer");
+		if (compute_output == cobalt::graphics::ResourceArrayId::Null ||
+		    display_input == cobalt::graphics::ResourceArrayId::Null)
+			return lak::err_t{u8"Failed to bind processed image"_str};
+
+		state.compute_bindings.state_group_node->BindResourceArray(
+		  compute_output, state.image_buffer.get());
+		state.display_bindings.state_group_node->BindResourceArray(
+		  display_input, state.image_buffer.get());
+		BOUNDS_ASSERT(
+		  state.compute_bindings.template set_texture<"tex">(source_texture));
+		BOUNDS_ASSERT(
+		  state.compute_bindings.template set_state_value<"image_size">(
+		    image_size));
+		BOUNDS_ASSERT(
+		  state.display_bindings.template set_state_value<"image_size">(
+		    image_size));
+
+		state.compute_bindings.state_group_node->SetComputeTask(
+		  cobalt::graphics::V3UInt32(
+		    (image_size.X() + 15U) / 16U, (image_size.Y() + 15U) / 16U, 1U));
+		state.compute_pass_node->AddChildNode(
+		  state.compute_bindings.program_node.get());
+		state.display_pass_node->AddChildNode(
+		  state.display_bindings.program_node.get());
+
+		state.display_bindings.state_group_node->SetPolygonFillMode(
+		  cobalt::graphics::IStateGroupNode::PolygonFillMode::Solid);
+		state.display_bindings.state_group_node->SetDepthTestEnabled(true);
+		state.display_bindings.state_group_node->SetDepthWriteEnabled(true);
+
+		size_t vertex_count = 6;
+		lak::array<cobalt::graphics::V2Float32> positions({{-1.0f, -1.0f},
+		                                                   {-1.0f, 1.0f},
+		                                                   {1.0f, -1.0f},
+		                                                   {-1.0f, 1.0f},
+		                                                   {1.0f, -1.0f},
+		                                                   {1.0f, 1.0f}});
+		lak::array<cobalt::graphics::V2Float32> texCoords({{0.0f, 0.0f},
+		                                                   {0.0f, 1.0f},
+		                                                   {1.0f, 0.0f},
+		                                                   {0.0f, 1.0f},
+		                                                   {1.0f, 0.0f},
+		                                                   {1.0f, 1.0f}});
+
+		cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
+		  positions_attribute(
+		    vertex_count,
+		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
+		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
+		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
+		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadOften);
+		cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
+		  texCoords_attribute(
+		    vertex_count,
+		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
+		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
+		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
+		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadOften);
+
+		state.vertex_buffer = rd->CreateVertexBuffer();
+
+		if (!state.vertex_buffer->BindVertexAttribute(positions_attribute))
+		{
+			ERROR("Failed to bind vertex positions attribute");
+			return lak::err_t{u8"Failed to bind vertex positions attribute"_str};
+		}
+		if (!state.vertex_buffer->BindVertexAttribute(texCoords_attribute))
+		{
+			ERROR("Failed to bind vertex texCoords attribute");
+			return lak::err_t{u8"Failed to bind vertex texCoords attribute"_str};
+		}
+
+		if (!positions_attribute.SetInitialData(positions.data(),
+		                                        positions.size()))
+		{
+			ERROR("Failed to set initial positions data");
+			return lak::err_t{u8"Failed to set initial positions data"_str};
+		}
+		if (!texCoords_attribute.SetInitialData(texCoords.data(),
+		                                        texCoords.size()))
+		{
+			ERROR("Failed to set initial texCoords data");
+			return lak::err_t{u8"Failed to set initial texCoords data"_str};
+		}
+
+		if (!state.vertex_buffer->AllocateMemory())
+		{
+			ERROR("Vertex buffer could not be allocated");
+			return lak::err_t{u8"Vertex buffer could not be allocated"_str};
+		}
+
+		state.renderable_node = rd->CreateRenderableNode();
+
+		lak::cobalt::as_result(
+		  state.renderable_node->SetPrimitiveMode(
+		    cobalt::graphics::IRenderableNode::PrimitiveMode::Triangles))
+		  .UNWRAP();
+
+		lak::cobalt::as_result(
+		  state.renderable_node->BindVertexAttribute(
+		    positions_attribute,
+		    state.display_program->GetVertexAttributeId("position")))
+		  .UNWRAP();
+		lak::cobalt::as_result(
+		  state.renderable_node->BindVertexAttribute(
+		    texCoords_attribute,
+		    state.display_program->GetVertexAttributeId("texCoord")))
+		  .UNWRAP();
+
+		state.display_bindings.state_group_node->AddChildNode(
+		  state.renderable_node.get());
+
+		state.compute_bindings.template set_state_value<"camera_to_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.compute_bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.compute_bindings
+		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
+		    lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.compute_bindings.template set_state_value<"XYZ_to_display">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.compute_bindings.template set_state_value<"user_matrix">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec4f_t(1.f))));
+		state.compute_bindings.template set_state_value<"scene_white_XYZ">(
+		  lak::cobalt::from_lak(lak::vec3f_t(1.f / 3.f)));
+		state.compute_bindings.template set_state_value<"exposure">(0.f);
+		state.compute_bindings.template set_state_value<"contrast">(0.f);
+		state.compute_bindings.template set_state_value<"lightness">(0.f);
+		state.compute_bindings.template set_state_value<"saturation">(0.f);
+		state.compute_bindings.template set_state_value<"hue">(0.f);
+		state.compute_bindings.template set_state_value<"raw_white_balance">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.compute_bindings.template set_state_value<"display_gamma">(1.f);
+
+		return lak::move_ok(state);
 	}
-	if (!state.shader_program->LoadShaderStage(
-	      cobalt::graphics::IShaderProgram::ShaderStage::Fragment,
-	      lak::cobalt::shader_source_hlsl(fs)))
-	{
-		ERROR("Loading fragment shader stage failed");
-		return lak::err_t{u8"Loading fragment shader stage failed"_str};
-	}
-
-	if (!state.shader_program->CompileProgram())
-	{
-		ERROR("Failed to compile shader");
-		return lak::err_t{u8"Failed to compile shader"_str};
-	}
-
-	// state.state_group_node = rd->CreateStateGroupNode();
-
-	// state.bindings.bind(state.state_group_node.get(),
-	//                     state.shader_program.get());
-	state.bindings =
-	  state.bindings.make(rd, state.shader_program.get()).UNWRAP();
-	ASSERT(state.bindings.template texture<"tex">());
-
-	state.sampler = rd->CreateTextureSampler2D();
-	state.sampler->SetTextureFilterMode(
-	  cobalt::graphics::ITextureSampler::FilterMode::Linear,
-	  cobalt::graphics::ITextureSampler::FilterMode::Nearest);
-
-	// state.program_node = rd->CreateProgramNode();
-
-	// if (!state.program_node->BindShaderProgram(state.shader_program.get()))
-	// {
-	// 	ERROR("Failed to bind shader program");
-	// 	return lak::err_t{u8"Failed to bind shader program"_str};
-	// }
-
-	state.render_pass_node->AddChildNode(state.bindings.program_node.get());
-
-	state.bindings.state_group_node->SetPolygonFillMode(
-	  cobalt::graphics::IStateGroupNode::PolygonFillMode::Solid);
-	state.bindings.state_group_node->SetDepthTestEnabled(true);
-	state.bindings.state_group_node->SetDepthWriteEnabled(true);
-
-	state.bindings.program_node->AddChildNode(
-	  state.bindings.state_group_node.get());
-
-	size_t vertex_count = 6;
-	lak::array<cobalt::graphics::V2Float32> positions({{-1.0f, -1.0f},
-	                                                   {-1.0f, 1.0f},
-	                                                   {1.0f, -1.0f},
-	                                                   {-1.0f, 1.0f},
-	                                                   {1.0f, -1.0f},
-	                                                   {1.0f, 1.0f}});
-	lak::array<cobalt::graphics::V2Float32> texCoords({{0.0f, 0.0f},
-	                                                   {0.0f, 1.0f},
-	                                                   {1.0f, 0.0f},
-	                                                   {0.0f, 1.0f},
-	                                                   {1.0f, 0.0f},
-	                                                   {1.0f, 1.0f}});
-
-	cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
-	  positions_attribute(
-	    vertex_count,
-	    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
-	      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
-	    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
-	      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadOften);
-	cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
-	  texCoords_attribute(
-	    vertex_count,
-	    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
-	      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
-	    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
-	      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadOften);
-
-	state.vertex_buffer = rd->CreateVertexBuffer();
-
-	if (!state.vertex_buffer->BindVertexAttribute(positions_attribute))
-	{
-		ERROR("Failed to bind vertex positions attribute");
-		return lak::err_t{u8"Failed to bind vertex positions attribute"_str};
-	}
-	if (!state.vertex_buffer->BindVertexAttribute(texCoords_attribute))
-	{
-		ERROR("Failed to bind vertex texCoords attribute");
-		return lak::err_t{u8"Failed to bind vertex texCoords attribute"_str};
-	}
-
-	if (!positions_attribute.SetInitialData(positions.data(), positions.size()))
-	{
-		ERROR("Failed to set initial positions data");
-		return lak::err_t{u8"Failed to set initial positions data"_str};
-	}
-	if (!texCoords_attribute.SetInitialData(texCoords.data(), texCoords.size()))
-	{
-		ERROR("Failed to set initial texCoords data");
-		return lak::err_t{u8"Failed to set initial texCoords data"_str};
-	}
-
-	if (!state.vertex_buffer->AllocateMemory())
-	{
-		ERROR("Vertex buffer could not be allocated");
-		return lak::err_t{u8"Vertex buffer could not be allocated"_str};
-	}
-
-	state.renderable_node = rd->CreateRenderableNode();
-
-	lak::cobalt::as_result(
-	  state.renderable_node->SetPrimitiveMode(
-	    cobalt::graphics::IRenderableNode::PrimitiveMode::Triangles))
-	  .UNWRAP();
-
-	lak::cobalt::as_result(
-	  state.renderable_node->BindVertexAttribute(
-	    positions_attribute,
-	    state.shader_program->GetVertexAttributeId("position")))
-	  .UNWRAP();
-	lak::cobalt::as_result(
-	  state.renderable_node->BindVertexAttribute(
-	    texCoords_attribute,
-	    state.shader_program->GetVertexAttributeId("texCoord")))
-	  .UNWRAP();
-
-	state.bindings.state_group_node->AddChildNode(state.renderable_node.get());
-
-	state.bindings.template set_state_value<"camera_to_XYZ">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-	state.bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-	state.bindings.template set_state_value<"scene_XYZ_to_display_XYZ">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-	state.bindings.template set_state_value<"XYZ_to_display">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-	state.bindings.template set_state_value<"user_matrix">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec4f_t(1.f))));
-	state.bindings.template set_state_value<"scene_white_XYZ">(
-	  lak::cobalt::from_lak(lak::vec3f_t(1.f / 3.f)));
-	state.bindings.template set_state_value<"exposure">(0.f);
-	state.bindings.template set_state_value<"contrast">(0.f);
-	state.bindings.template set_state_value<"lightness">(0.f);
-	state.bindings.template set_state_value<"saturation">(0.f);
-	state.bindings.template set_state_value<"hue">(0.f);
-	state.bindings.template set_state_value<"raw_white_balance">(
-	  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-	state.bindings.template set_state_value<"display_gamma">(1.f);
-
-	return lak::move_ok(state);
-}
+};
 
 struct rye_window : virtual public basic_window_api
 {
@@ -892,7 +1005,11 @@ struct rye_window : virtual public basic_window_api
 
 	const lak::cobalt::graphics_context *gc;
 
-	virtual ~rye_window() { reset_textures(); }
+	virtual ~rye_window()
+	{
+		image_viewport_state.clear();
+		reset_textures();
+	}
 
 	virtual void init() override final
 	{
@@ -1398,27 +1515,29 @@ struct rye_window : virtual public basic_window_api
 
 	void update_camera_colour_space()
 	{
-		image_viewport_state.bindings.template set_state_value<"camera_to_XYZ">(
-		  lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
-		// image_viewport_state.bindings
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"camera_to_XYZ">(
+		    lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
+		// image_viewport_state.compute_bindings
 		//   .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ() *
 		//                           camera_primaries.XYZ_to_linear()));
-		image_viewport_state.bindings
+		image_viewport_state.compute_bindings
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      scene_primaries.w, camera_primaries.w)));
-		// image_viewport_state.bindings.template
+		// image_viewport_state.compute_bindings.template
 		// set_state_value<"scene_white_XYZ">(
 		//   lak::cobalt::from_lak(scene_primaries.w_XYZ().to_vec()));
-		image_viewport_state.bindings.template set_state_value<"scene_white_XYZ">(
-		  lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"scene_white_XYZ">(
+		    lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
 
-		// image_viewport_state.bindings
+		// image_viewport_state.compute_bindings
 		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.bindings
+		image_viewport_state.compute_bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
@@ -1426,26 +1545,27 @@ struct rye_window : virtual public basic_window_api
 
 	void update_display_colour_space()
 	{
-		image_viewport_state.bindings.template set_state_value<"XYZ_to_display">(
-		  lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"XYZ_to_display">(
+		    lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
 
-		// image_viewport_state.bindings
+		// image_viewport_state.compute_bindings
 		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.bindings
+		image_viewport_state.compute_bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
-		image_viewport_state.bindings.template set_state_value<"display_gamma">(
-		  display_gamma);
+		image_viewport_state.compute_bindings
+		  .template set_state_value<"display_gamma">(display_gamma);
 	}
 
 	void update_camera_white_balance()
 	{
 		calculate_camera_white_balance();
 
-		image_viewport_state.bindings
+		image_viewport_state.compute_bindings
 		  .template set_state_value<"raw_white_balance">(
 		    lak::cobalt::from_lak(raw_wb));
 	}
@@ -1478,6 +1598,7 @@ struct rye_window : virtual public basic_window_api
 					raw_update    = true;
 					time_acc      = 0.f;
 
+					image_viewport_state.clear();
 					reset_textures();
 
 					ir_histo.clear();
@@ -1486,7 +1607,6 @@ struct rye_window : virtual public basic_window_api
 
 					load_db_data();
 
-					image_viewport_state.clear();
 					image_viewport.reset();
 					finaltex.emplace(raw_image->data);
 
@@ -1527,6 +1647,7 @@ struct rye_window : virtual public basic_window_api
 				// lrsrgbtex.emplace(lrsrgbimg);
 				// lrwavetex.emplace(lrwaveimg);
 				// lrwave2tex.emplace(lrwave2img);
+				image_viewport_state.clear();
 				image_viewport.reset();
 			}
 
@@ -1696,7 +1817,7 @@ struct rye_window : virtual public basic_window_api
 						user_mat.x.w = 1.f;
 						user_mat.y.w = 1.f;
 						user_mat.z.w = 1.f;
-						image_viewport_state.bindings
+						image_viewport_state.compute_bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
 					}
@@ -1716,7 +1837,7 @@ struct rye_window : virtual public basic_window_api
 					  "H##user_matrix_w", &user_mat.w.x, 0.05f, -10.f, 10.f);
 
 					if (update_user)
-						image_viewport_state.bindings
+						image_viewport_state.compute_bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
 					ImGui::Separator();
@@ -1871,31 +1992,32 @@ struct rye_window : virtual public basic_window_api
 
 				if (ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.f, 1000.f))
 				{
-					image_viewport_state.bindings.template set_state_value<"exposure">(
-					  exposure);
+					image_viewport_state.compute_bindings
+					  .template set_state_value<"exposure">(exposure);
 				}
 
 				if (ImGui::DragFloat("Contrast", &contrast, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.bindings.template set_state_value<"contrast">(
-					  contrast);
+					image_viewport_state.compute_bindings
+					  .template set_state_value<"contrast">(contrast);
 				}
 
 				if (ImGui::DragFloat("Lightness", &lightness, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.bindings.template set_state_value<"lightness">(
-					  lightness);
+					image_viewport_state.compute_bindings
+					  .template set_state_value<"lightness">(lightness);
 				}
 
 				if (ImGui::DragFloat("Saturation", &saturation, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.bindings.template set_state_value<"saturation">(
-					  saturation);
+					image_viewport_state.compute_bindings
+					  .template set_state_value<"saturation">(saturation);
 				}
 
 				// if (ImGui::DragFloat("Hue (degrees)", &hue, 1.f, -360.f, 360.f))
 				// {
-				// 	image_viewport_state.bindings.template set_state_value<"hue">(hue);
+				// 	image_viewport_state.compute_bindings.template
+				// set_state_value<"hue">(hue);
 				// }
 
 				ImGui::Separator();
@@ -2086,6 +2208,11 @@ struct rye_window : virtual public basic_window_api
 
 					if (vpd.passes->empty())
 					{
+						// :FIXME: for compatibility reasons compute passes cannot be
+						// mixed with regular passes!
+						auto *compute_pass = vpd.append_pass();
+						compute_pass->BindFrameBuffer(nullptr);
+
 						auto clear_pass = vpd.append_pass();
 						clear_pass->SetAttachmentClearData(
 						  cobalt::graphics::IFrameBuffer::AttachmentType::Color,
@@ -2096,8 +2223,14 @@ struct rye_window : virtual public basic_window_api
 						  0,
 						  cobalt::graphics::V4Float32{1.f, 1.f, 1.f, 1.f});
 
+						auto *display_pass = vpd.append_pass();
 						image_viewport_state =
-						  hello_cobalt_triangle(window(), vpd.append_pass()).UNWRAP();
+						  rye_gpu_image_process_state::make(
+						    window(),
+						    compute_pass,
+						    display_pass,
+						    ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
+						    .UNWRAP();
 
 						// if (image_viewport_state.XYZ_to_display !=
 						//     cobalt::graphics::StateValueId::Null)
@@ -2127,25 +2260,26 @@ struct rye_window : virtual public basic_window_api
 						update_display_colour_space();
 						update_camera_white_balance();
 
-						image_viewport_state.bindings
+						image_viewport_state.compute_bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
 
-						image_viewport_state.bindings.template set_state_value<"exposure">(
-						  exposure);
+						image_viewport_state.compute_bindings
+						  .template set_state_value<"exposure">(exposure);
 
-						image_viewport_state.bindings.template set_state_value<"contrast">(
-						  contrast);
+						image_viewport_state.compute_bindings
+						  .template set_state_value<"contrast">(contrast);
 
-						image_viewport_state.bindings
+						image_viewport_state.compute_bindings
 						  .template set_state_value<"lightness">(lightness);
 
-						image_viewport_state.bindings
+						image_viewport_state.compute_bindings
 						  .template set_state_value<"saturation">(saturation);
 
-						image_viewport_state.bindings.template set_state_value<"hue">(hue);
+						image_viewport_state.compute_bindings
+						  .template set_state_value<"hue">(hue);
 
-						// image_viewport_state.bindings
+						// image_viewport_state.compute_bindings
 						//   .template
 						//   set_state_value<"camera_white_to_display_white_XYZ">(
 						//     lak::cobalt::from_lak(display_primaries.w_XYZ().to_vec()));
@@ -2163,12 +2297,6 @@ struct rye_window : virtual public basic_window_api
 						// 	  lak::cobalt::from_lak(temp_balance));
 						// }
 					}
-
-					BOUNDS_ASSERT(
-					  image_viewport_state.bindings.template set_texture<"tex">(
-					    ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()),
-					    image_viewport_state.sampler.get()));
-
 					// rye_image_view(lrsrgbtex, &lrawsrgbtex_size);
 				}
 				ImGui::EndChild();
