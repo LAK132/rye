@@ -1757,6 +1757,95 @@ struct rye_window : virtual public basic_window_api
 
 				ImGui::Separator();
 
+				bool update_camera_primaries  = false;
+				bool update_scene_primaries   = false;
+				bool update_raw_white_balance = false;
+				bool update_user_mat          = false;
+				{
+					const char *labels[4] = {
+					  "R G B",
+					  "IR R G (Digital)",
+					  "R G B negative (Film)",
+					  "B&W negative (Film)",
+					};
+					if (ImGui::Combo("Colour mode",
+					                 reinterpret_cast<int *>(&colour_method),
+					                 labels,
+					                 4))
+					{
+						calculate_camera_colour_space();
+						update_camera_primaries  = true;
+						update_raw_white_balance = true;
+						update_user_mat          = true;
+					}
+				}
+
+				if (colour_method == colour_space_method::BW_neg)
+				{
+					const char *labels[4] = {
+					  "All channels",
+					  "Red channel",
+					  "Green channel",
+					  "Blue channel",
+					};
+					update_user_mat |= ImGui::Combo(
+					  "BW source", reinterpret_cast<int *>(&bw_source), labels, 4);
+				}
+
+				if (update_user_mat)
+				{
+					switch (colour_method)
+					{
+						case colour_space_method::R_G_B_neg:
+						{
+							user_mat = lak::diagonal(lak::vec4f_t(lak::vec3f_t(-1.f), 1.f));
+							user_mat.x.w = 1.f;
+							user_mat.y.w = 1.f;
+							user_mat.z.w = 1.f;
+						}
+						break;
+
+						case colour_space_method::BW_neg:
+						{
+							lak::vec4f_t basis;
+							switch (bw_source)
+							{
+								default:
+									[[fallthrough]];
+								case bw_source_channel::W_channel:
+									basis = lak::vec4f_t(lak::vec3f_t(-1.f), 3.f);
+									break;
+								case bw_source_channel::R_channel:
+									basis = lak::vec4f_t(-1.f, 0.f, 0.f, 1.f);
+									break;
+								case bw_source_channel::G_channel:
+									basis = lak::vec4f_t(0.f, -1.f, 0.f, 1.f);
+									break;
+								case bw_source_channel::B_channel:
+									basis = lak::vec4f_t(0.f, 0.f, -1.f, 1.f);
+									break;
+							}
+							user_mat = lak::mat4f_t{
+							  basis,
+							  basis,
+							  basis,
+							  lak::vec4f_t(lak::vec3f_t(0.f), 1.f),
+							};
+						}
+						break;
+
+						default:
+							user_mat = lak::diagonal(lak::vec4f_t(1.f));
+							break;
+					}
+
+					image_viewport_state.compute_bindings
+					  .template set_state_value<"user_matrix">(
+					    lak::cobalt::from_lak(user_mat));
+				}
+
+				ImGui::Separator();
+
 				if (colour_method == colour_space_method::IR_R_G)
 				{
 					ImGui::Text("Raw IR white point");
