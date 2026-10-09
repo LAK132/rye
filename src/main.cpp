@@ -447,6 +447,9 @@ struct rye_gpu_image_process_state
 
 	cobalt::graphics::ITexelArray::unique_ptr image_buffer;
 
+	// OpenGL always requires a sampler when dealing with textures
+	cobalt::graphics::ITextureSampler2D::unique_ptr sampler;
+
 	lak::cobalt::program_state<
 	  lak::type_pack<
 	    lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32,
@@ -494,6 +497,7 @@ struct rye_gpu_image_process_state
 	  vertex_buffer(lak::move(other.vertex_buffer)),
 	  renderable_node(lak::move(other.renderable_node)),
 	  image_buffer(lak::move(other.image_buffer)),
+	  sampler(lak::move(other.sampler)),
 	  display_bindings(lak::move(other.display_bindings)),
 	  compute_bindings(lak::move(other.compute_bindings))
 	{
@@ -507,6 +511,7 @@ struct rye_gpu_image_process_state
 		lak::swap(vertex_buffer, other.vertex_buffer);
 		lak::swap(renderable_node, other.renderable_node);
 		lak::swap(image_buffer, other.image_buffer);
+		lak::swap(sampler, other.sampler);
 		lak::swap(display_bindings, other.display_bindings);
 		lak::swap(compute_bindings, other.compute_bindings);
 		return *this;
@@ -558,7 +563,7 @@ struct rye_gpu_image_process_state
 		vertex_buffer.reset();
 	}
 
-	lak::result<rye_gpu_image_process_state, lak::u8string> make(
+	static lak::result<rye_gpu_image_process_state, lak::u8string> make(
 	  lak::window &wnd,
 	  cobalt::graphics::IRenderPassNode *compute_pass_node,
 	  cobalt::graphics::IRenderPassNode *display_pass_node,
@@ -841,6 +846,11 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		state.display_bindings =
 		  state.display_bindings.make(rd, state.display_program.get()).UNWRAP();
 
+		state.sampler = rd->CreateTextureSampler2D();
+		state.sampler->SetTextureFilterMode(
+		  cobalt::graphics::ITextureSampler::FilterMode::Linear,
+		  cobalt::graphics::ITextureSampler::FilterMode::Nearest);
+
 		const auto image_size = source_texture->MipmapLevelDimensions(0);
 		if (image_size.X() == 0U || image_size.Y() == 0U)
 			return lak::err_t{u8"Cannot process an empty image"_str};
@@ -869,8 +879,8 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		  compute_output, state.image_buffer.get());
 		state.display_bindings.state_group_node->BindResourceArray(
 		  display_input, state.image_buffer.get());
-		BOUNDS_ASSERT(
-		  state.compute_bindings.template set_texture<"tex">(source_texture));
+		BOUNDS_ASSERT(state.compute_bindings.template set_texture<"tex">(
+		  source_texture, state.sampler.get()));
 		BOUNDS_ASSERT(
 		  state.compute_bindings.template set_state_value<"image_size">(
 		    image_size));
