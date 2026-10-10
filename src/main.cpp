@@ -438,15 +438,18 @@ void process_image_async(int white_level,
 
 struct rye_gpu_image_process_state
 {
-	cobalt::graphics::IRenderPassNode::unique_ptr compute_pass_node;
-	cobalt::graphics::IRenderPassNode *display_pass_node = nullptr;
-	cobalt::graphics::IShaderProgram::unique_ptr compute_program;
+	cobalt::graphics::IRenderPassNode::unique_ptr pass_node;
+	cobalt::graphics::IRenderPassNode::unique_ptr display_pass_node;
+	cobalt::graphics::IShaderProgram::unique_ptr program;
 	cobalt::graphics::IShaderProgram::unique_ptr display_program;
 	cobalt::graphics::IVertexBuffer::unique_ptr vertex_buffer;
 	cobalt::graphics::IRenderableNode::unique_ptr renderable_node;
 
 	cobalt::graphics::ITexelArray::unique_ptr image_buffer;
 	cobalt::graphics::ITexelArrayOutput::unique_ptr image_capture;
+
+	cobalt::graphics::ITexelArray::unique_ptr display_image_buffer;
+	// cobalt::graphics::ITextureBuffer2D::unique_ptr display_image_buffer;
 
 	// OpenGL always requires a sampler when dealing with textures
 	cobalt::graphics::ITextureSampler2D::unique_ptr sampler;
@@ -458,9 +461,15 @@ struct rye_gpu_image_process_state
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "camera_to_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                     "camera_XYZ_to_scene_XYZ">,
+	                                     "scene_to_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "XYZ_to_scene">,
+	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                     "XYZ_to_display">,
+	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                     "camera_XYZ_to_scene_XYZ">,
+	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                     "scene_XYZ_to_display_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M4Float32,
 	                                     "user_matrix">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::V3Float32,
@@ -475,50 +484,51 @@ struct rye_gpu_image_process_state
 	                                     "saturation">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::V1Float32, "hue">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                     "raw_white_balance">>,
+	                                     "raw_white_balance">,
+	    lak::cobalt::state_value_binding<cobalt::graphics::V1Float32,
+	                                     "display_gamma">>,
 	  lak::type_pack<
-	    lak::cobalt::texture_binding<cobalt::graphics::ITextureBuffer2D, "tex">>>
-	  compute_bindings;
+	    lak::cobalt::texture_binding<cobalt::graphics::ITextureBuffer2D, "tex">
+	    // ,lak::cobalt::texture_binding<cobalt::graphics::ITextureBuffer2D,
+	    //                              "display_image_buffer">
+	    >>
+	  bindings;
 
 	lak::cobalt::program_state<lak::type_pack<
 	  lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32, "image_size">,
-	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                   "scene_to_XYZ">,
-	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                   "scene_XYZ_to_display_XYZ">,
-	  lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
-	                                   "XYZ_to_display">,
-	  lak::cobalt::state_value_binding<cobalt::graphics::V1Float32, "gamma">>>
+	  lak::cobalt::state_value_binding<cobalt::graphics::V4Float32, "image_uv">>>
 	  display_bindings;
 
 	rye_gpu_image_process_state() = default;
 	rye_gpu_image_process_state(rye_gpu_image_process_state &&other)
-	: compute_pass_node(lak::move(other.compute_pass_node)),
-	  display_pass_node(lak::exchange(other.display_pass_node, nullptr)),
-	  compute_program(lak::move(other.compute_program)),
+	: pass_node(lak::move(other.pass_node)),
+	  display_pass_node(lak::move(other.display_pass_node)),
+	  program(lak::move(other.program)),
 	  display_program(lak::move(other.display_program)),
 	  vertex_buffer(lak::move(other.vertex_buffer)),
 	  renderable_node(lak::move(other.renderable_node)),
 	  image_buffer(lak::move(other.image_buffer)),
 	  image_capture(lak::move(other.image_capture)),
+	  display_image_buffer(lak::move(other.display_image_buffer)),
 	  sampler(lak::move(other.sampler)),
-	  display_bindings(lak::move(other.display_bindings)),
-	  compute_bindings(lak::move(other.compute_bindings))
+	  bindings(lak::move(other.bindings)),
+	  display_bindings(lak::move(other.display_bindings))
 	{
 	}
 	rye_gpu_image_process_state &operator=(rye_gpu_image_process_state &&other)
 	{
-		lak::swap(compute_pass_node, other.compute_pass_node);
+		lak::swap(pass_node, other.pass_node);
 		lak::swap(display_pass_node, other.display_pass_node);
-		lak::swap(compute_program, other.compute_program);
+		lak::swap(program, other.program);
 		lak::swap(display_program, other.display_program);
 		lak::swap(vertex_buffer, other.vertex_buffer);
 		lak::swap(renderable_node, other.renderable_node);
 		lak::swap(image_buffer, other.image_buffer);
 		lak::swap(image_capture, other.image_capture);
+		lak::swap(display_image_buffer, other.display_image_buffer);
 		lak::swap(sampler, other.sampler);
+		lak::swap(bindings, other.bindings);
 		lak::swap(display_bindings, other.display_bindings);
-		lak::swap(compute_bindings, other.compute_bindings);
 		return *this;
 	}
 	rye_gpu_image_process_state(const rye_gpu_image_process_state &) = delete;
@@ -529,22 +539,22 @@ struct rye_gpu_image_process_state
 
 	void clear()
 	{
-		if (compute_pass_node)
+		if (pass_node)
 		{
-			compute_pass_node->RemoveAllChildNodes();
-			compute_pass_node.reset();
+			pass_node->RemoveAllChildNodes();
+			pass_node.reset();
 		}
-		if (compute_bindings.program_node)
+		if (bindings.program_node)
 		{
-			compute_bindings.program_node->RemoveAllChildNodes();
-			compute_bindings.program_node.reset();
+			bindings.program_node->RemoveAllChildNodes();
+			bindings.program_node.reset();
 		}
-		if (compute_bindings.state_group_node)
+		if (bindings.state_group_node)
 		{
-			compute_bindings.state_group_node->RemoveAllChildNodes();
-			compute_bindings.state_group_node.reset();
+			bindings.state_group_node->RemoveAllChildNodes();
+			bindings.state_group_node.reset();
 		}
-		compute_program.reset();
+		program.reset();
 
 		if (display_pass_node)
 		{
@@ -567,24 +577,25 @@ struct rye_gpu_image_process_state
 			image_buffer->RemoveOutputCaptureTarget(image_capture.get());
 		image_capture.reset();
 		image_buffer.reset();
+
+		display_image_buffer.reset();
+
 		renderable_node.reset();
 		vertex_buffer.reset();
 	}
 
 	static lak::result<rye_gpu_image_process_state, lak::u8string> make(
-	  lak::window &wnd,
-	  cobalt::graphics::IRenderPassNode *display_pass_node,
-	  cobalt::graphics::ITextureBuffer2D *source_texture)
+	  lak::window &wnd, cobalt::graphics::ITextureBuffer2D *source_texture)
 	{
 		const auto &cgx = lak::cobalt_graphics_context(wnd.handle()).UNWRAP();
 		auto *rd        = cgx.renderer.get();
 
 		rye_gpu_image_process_state state;
 
-		state.compute_pass_node = rd->CreateRenderPassNode();
-		state.compute_pass_node->BindFrameBuffer(nullptr);
+		state.pass_node = rd->CreateRenderPassNode();
+		state.pass_node->BindFrameBuffer(nullptr);
 
-		state.display_pass_node = display_pass_node;
+		state.display_pass_node = rd->CreateRenderPassNode();
 
 		auto vs_in  = R"(
 struct VSInput
@@ -600,59 +611,71 @@ struct VSOutput
 };)"_str;
 
 		auto vs = vs_in + vs_out + R"(
+uniform float4 image_uv;
+
 VSOutput main(VSInput IN)
 {
 	VSOutput OUT;
 
 	OUT.position = float4(IN.position, 0.0f, 1.0f);
-	OUT.texCoord = IN.texCoord;
+	OUT.texCoord = lerp(image_uv.xy, image_uv.zw, IN.texCoord);
 
 	return OUT;
 })"_str;
 
 		auto fs = vs_out + R"(
-Buffer<float4> image_buffer;
+Buffer<float4> display_image_buffer;
 uniform uint2 image_size;
-uniform row_major float3x3 scene_to_XYZ;
-uniform row_major float3x3 scene_XYZ_to_display_XYZ;
-uniform row_major float3x3 XYZ_to_display;
-uniform float gamma;
 
 float3 get_pixel(int2 pixel)
 {
 	pixel = clamp(pixel, int2(0, 0), int2(image_size) - 1);
-	return image_buffer[pixel.x + (pixel.y * image_size.x)].xyz;
+	return display_image_buffer[pixel.x + (pixel.y * image_size.x)].xyz;
 }
 
-float4 main(VSOutput IN) : SV_Target
+float3 sample_pixel(float2 uv) : SV_Target
 {
-	float2 coord = (IN.texCoord * float2(image_size)) - 0.5f;
+	float2 coord = (uv * float2(image_size)) - 0.5f;
 	int2 index = int2(floor(coord));
 	float2 weight = frac(coord);
+
 	float3 p00 = get_pixel(index);
 	float3 p01 = get_pixel(index + int2(0, 1));
 	float3 p10 = get_pixel(index + int2(1, 0));
 	float3 p11 = get_pixel(index + int2(1, 1));
+
 	float3 p0 = lerp(p00, p01, weight.y);
 	float3 p1 = lerp(p10, p11, weight.y);
 	float3 p = lerp(p0, p1, weight.x);
-	p = scene_to_XYZ * p;
-	p = scene_XYZ_to_display_XYZ * p;
-	p = XYZ_to_display * p;
-	return float4(pow(p, 1.0f / gamma), 1.0f);
+
+	return p;
+}
+
+float4 main(VSOutput IN) : SV_Target
+{
+	float2 uv = IN.texCoord;
+	if ((uv.x < 0) | (uv.x > 1) | (uv.y < 0) | (uv.y > 1)) discard;
+	float3 p = sample_pixel(IN.texCoord);
+	return float4(p, 1.0f);
 })"_str;
 
 		auto cs = R"(
 uniform Texture2D<float4> tex;
 RWBuffer<float4> image_buffer;
+RWBuffer<float4> display_image_buffer;
+// RWTexture2D<float4> display_image_buffer;
 uniform uint2 image_size;
 
 uniform row_major float3x3 camera_to_XYZ;
-uniform row_major float3x3 camera_XYZ_to_scene_XYZ;
+uniform row_major float3x3 scene_to_XYZ;
 uniform row_major float3x3 XYZ_to_scene;
-uniform row_major float4x4 user_matrix;
+uniform row_major float3x3 XYZ_to_display;
+uniform row_major float3x3 camera_XYZ_to_scene_XYZ;
+uniform row_major float3x3 scene_XYZ_to_display_XYZ;
 uniform row_major float3x3 raw_white_balance;
+uniform row_major float4x4 user_matrix;
 uniform float3 scene_white_XYZ;
+uniform float display_gamma;
 uniform float exposure;
 uniform float contrast;
 uniform float lightness;
@@ -809,21 +832,27 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	colour = LCh_to_Luv(colour);
 	colour = Luv_to_XYZ(colour, XYZ_to_uvY(scene_white_XYZ));
 
-	colour = XYZ_to_scene * colour;
+	image_buffer[(thread_id.y * image_size.x) + thread_id.x] =
+		float4(XYZ_to_scene * colour, 1.0f);
 
-	image_buffer[thread_id.y * image_size.x + thread_id.x] =
-		float4(colour, 1.0f);
+	colour = scene_XYZ_to_display_XYZ * colour;
+
+	colour = XYZ_to_display * colour;
+
+	// display_image_buffer[thread_id.xy] =
+	display_image_buffer[(thread_id.y * image_size.x) + thread_id.x] =
+		float4(pow(colour, 1.0f / display_gamma), 1.0f);
 })"_str;
 
-		state.compute_program = rd->CreateShaderProgram();
-		if (!state.compute_program->LoadShaderStage(
+		state.program = rd->CreateShaderProgram();
+		if (!state.program->LoadShaderStage(
 		      cobalt::graphics::IShaderProgram::ShaderStage::Compute,
 		      lak::cobalt::shader_source_hlsl(cs)))
 		{
 			ERROR("Loading compute shader stage failed");
 			return lak::err_t{u8"Loading compute shader stage failed"_str};
 		}
-		if (!state.compute_program->CompileProgram())
+		if (!state.program->CompileProgram())
 		{
 			ERROR("Failed to compile compute shader");
 			return lak::err_t{u8"Failed to compile compute shader"_str};
@@ -852,8 +881,7 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 			return lak::err_t{u8"Failed to compile shader"_str};
 		}
 
-		state.compute_bindings =
-		  state.compute_bindings.make(rd, state.compute_program.get()).UNWRAP();
+		state.bindings = state.bindings.make(rd, state.program.get()).UNWRAP();
 		state.display_bindings =
 		  state.display_bindings.make(rd, state.display_program.get()).UNWRAP();
 
@@ -885,32 +913,63 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		state.image_capture->SetArrayCaptureRegion(size_t(image_size.X()) *
 		                                           size_t(image_size.Y()));
 
-		const auto compute_output =
-		  state.compute_program->GetResourceArrayId("image_buffer");
-		const auto display_input =
-		  state.display_program->GetResourceArrayId("image_buffer");
-		if (compute_output == cobalt::graphics::ResourceArrayId::Null ||
-		    display_input == cobalt::graphics::ResourceArrayId::Null)
-			return lak::err_t{u8"Failed to bind processed image"_str};
+		// state.display_image_buffer = rd->CreateTextureBuffer2D();
+		// state.display_image_buffer->SetTextureFormat(
+		//   cobalt::graphics::ITextureBuffer::ImageFormat::RGBA,
+		//   cobalt::graphics::ITextureBuffer::DataFormat::Float32);
+		// state.display_image_buffer->SetTextureDimensions(
+		//   {uint32_t(image_size.X()), uint32_t(image_size.Y())});
+		// state.display_image_buffer->SetUsageFlags(
+		//   cobalt::graphics::ITextureBuffer::UsageFlags::ShaderInput
+		//   // | cobalt::graphics::ITextureBuffer::UsageFlags::ShaderOutput
+		// );
+		// if (!state.display_image_buffer->AllocateMemory())
+		// 	return lak::err_t{u8"Failed to allocate display image"_str};
 
-		state.compute_bindings.state_group_node->BindResourceArray(
-		  compute_output, state.image_buffer.get());
+		state.display_image_buffer = rd->CreateTexelArray();
+		state.display_image_buffer->SetBufferLayout(
+		  cobalt::graphics::ITexelArray::ImageFormat::RGBA,
+		  cobalt::graphics::ITexelArray::DataFormat::Float32,
+		  size_t(image_size.X()) * size_t(image_size.Y()));
+		state.display_image_buffer->SetUsageFlags(
+		  cobalt::graphics::ITexelArray::UsageFlags::ShaderInput |
+		  cobalt::graphics::ITexelArray::UsageFlags::ShaderOutput |
+		  cobalt::graphics::ITexelArray::UsageFlags::TransferSource);
+		if (!state.display_image_buffer->AllocateMemory())
+			return lak::err_t{u8"Failed to allocate processed image"_str};
+
+		const auto output = state.program->GetResourceArrayId("image_buffer");
+		if (output == cobalt::graphics::ResourceArrayId::Null)
+			return lak::err_t{u8"Failed to get output image binding"_str};
+		const auto display_output =
+		  state.program->GetResourceArrayId("display_image_buffer");
+		if (display_output == cobalt::graphics::ResourceArrayId::Null)
+			return lak::err_t{u8"Failed to get output display image binding"_str};
+		const auto display_input =
+		  state.display_program->GetResourceArrayId("display_image_buffer");
+		if (display_input == cobalt::graphics::ResourceArrayId::Null)
+			return lak::err_t{u8"Failed to get input display image binding"_str};
+
+		state.bindings.state_group_node->BindResourceArray(
+		  output, state.image_buffer.get());
+		state.bindings.state_group_node->BindResourceArray(
+		  display_output, state.display_image_buffer.get());
 		state.display_bindings.state_group_node->BindResourceArray(
-		  display_input, state.image_buffer.get());
-		BOUNDS_ASSERT(state.compute_bindings.template set_texture<"tex">(
+		  display_input, state.display_image_buffer.get());
+
+		BOUNDS_ASSERT(state.bindings.template set_texture<"tex">(
 		  source_texture, state.sampler.get()));
 		BOUNDS_ASSERT(
-		  state.compute_bindings.template set_state_value<"image_size">(
-		    image_size));
+		  state.bindings.template set_state_value<"image_size">(image_size));
 		BOUNDS_ASSERT(
 		  state.display_bindings.template set_state_value<"image_size">(
 		    image_size));
+		state.display_bindings.template set_state_value<"image_uv">(
+		  lak::cobalt::from_lak(lak::vec4f_t(0.f, 0.f, 1.f, 1.f)));
 
-		state.compute_bindings.state_group_node->SetComputeTask(
-		  cobalt::graphics::V3UInt32(
-		    (image_size.X() + 15U) / 16U, (image_size.Y() + 15U) / 16U, 1U));
-		state.compute_pass_node->AddChildNode(
-		  state.compute_bindings.program_node.get());
+		state.bindings.state_group_node->SetComputeTask(cobalt::graphics::V3UInt32(
+		  (image_size.X() + 15U) / 16U, (image_size.Y() + 15U) / 16U, 1U));
+		state.pass_node->AddChildNode(state.bindings.program_node.get());
 		state.display_pass_node->AddChildNode(
 		  state.display_bindings.program_node.get());
 
@@ -1001,32 +1060,30 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		state.display_bindings.state_group_node->AddChildNode(
 		  state.renderable_node.get());
 
-		state.compute_bindings.template set_state_value<"camera_to_XYZ">(
+		state.bindings.template set_state_value<"camera_to_XYZ">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		state.bindings.template set_state_value<"scene_to_XYZ">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings.template set_state_value<"XYZ_to_scene">(
+		state.bindings.template set_state_value<"XYZ_to_scene">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.compute_bindings.template set_state_value<"user_matrix">(
+		state.bindings.template set_state_value<"XYZ_to_display">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.bindings.template set_state_value<"scene_XYZ_to_display_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.bindings.template set_state_value<"user_matrix">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec4f_t(1.f))));
-		state.compute_bindings.template set_state_value<"scene_white_XYZ">(
+		state.bindings.template set_state_value<"scene_white_XYZ">(
 		  lak::cobalt::from_lak(lak::vec3f_t(1.f / 3.f)));
-		state.compute_bindings.template set_state_value<"exposure">(0.f);
-		state.compute_bindings.template set_state_value<"contrast">(0.f);
-		state.compute_bindings.template set_state_value<"lightness">(0.f);
-		state.compute_bindings.template set_state_value<"saturation">(0.f);
-		state.compute_bindings.template set_state_value<"hue">(0.f);
-		state.compute_bindings.template set_state_value<"raw_white_balance">(
+		state.bindings.template set_state_value<"exposure">(0.f);
+		state.bindings.template set_state_value<"contrast">(0.f);
+		state.bindings.template set_state_value<"lightness">(0.f);
+		state.bindings.template set_state_value<"saturation">(0.f);
+		state.bindings.template set_state_value<"hue">(0.f);
+		state.bindings.template set_state_value<"raw_white_balance">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-
-		state.display_bindings.template set_state_value<"scene_to_XYZ">(
-		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.display_bindings
-		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		    lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.display_bindings.template set_state_value<"XYZ_to_display">(
-		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
-		state.display_bindings.template set_state_value<"gamma">(1.f);
+		state.bindings.template set_state_value<"display_gamma">(1.f);
 
 		return lak::move_ok(state);
 	}
@@ -1039,9 +1096,12 @@ struct rye_window : virtual public basic_window_api
 	const lak::cobalt::graphics_context *gc;
 	bool run_compute = false;
 
+	float image_view_scale = 1.f;
+	ImVec2 image_view_pos  = ImVec2(0, 0);
+
 	virtual ~rye_window()
 	{
-		image_viewport_state.clear();
+		image_viewport_state.reset();
 		reset_textures();
 	}
 
@@ -1087,10 +1147,9 @@ struct rye_window : virtual public basic_window_api
 	bool can_save_gpu_image() const
 	{
 		return !image_load && raw_image && finaltex &&
-		       image_viewport_state.image_buffer &&
-		       image_viewport_state.image_capture &&
-		       image_viewport_state.compute_pass_node &&
-		       image_viewport_state.compute_bindings.state_group_node;
+		       image_viewport_state->image_buffer &&
+		       image_viewport_state->image_capture &&
+		       image_viewport_state->pass_node;
 	}
 
 	lak::result<lak::image<lak::vec4f_t>, lak::u8string> read_gpu_image()
@@ -1105,7 +1164,7 @@ struct rye_window : virtual public basic_window_api
 		rd->WaitForOutputCaptureComplete();
 		DEFER(rd->WaitForDeferredDeletionComplete());
 
-		auto &state   = image_viewport_state;
+		auto &state   = *image_viewport_state;
 		auto &capture = state.image_capture;
 
 		capture->ClearCapturedOutput();
@@ -1114,7 +1173,7 @@ struct rye_window : virtual public basic_window_api
 		state.image_buffer->AddOutputCaptureTarget(capture.get());
 		DEFER(state.image_buffer->RemoveOutputCaptureTarget(capture.get()));
 
-		auto *compute_pass = state.compute_pass_node.get();
+		auto *compute_pass = state.pass_node.get();
 		rd->SetRenderPasses(&compute_pass, 1);
 		DEFER(rd->RemoveAllRenderPasses());
 		rd->StartNewFrame();
@@ -1456,7 +1515,7 @@ struct rye_window : virtual public basic_window_api
 	float lrawsrgbtex_size = 1.f;
 
 	lak::ImUniqueViewport image_viewport;
-	rye_gpu_image_process_state image_viewport_state;
+	lak::optional<rye_gpu_image_process_state> image_viewport_state;
 
 	lak::mat3f_t XYZ_to_cam;
 	lak::mat3f_t cam_to_XYZ;
@@ -1625,17 +1684,8 @@ struct rye_window : virtual public basic_window_api
 
 	void update_camera_colour_space()
 	{
-		image_viewport_state.compute_bindings
-		  .template set_state_value<"camera_to_XYZ">(
-		    lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
-		// image_viewport_state.compute_bindings
-		//   .template set_state_value<"camera_XYZ_to_scene_XYZ">(
-		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ() *
-		//                           camera_primaries.XYZ_to_linear()));
-		image_viewport_state.compute_bindings
-		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		      scene_primaries.w, camera_primaries.w)));
+		image_viewport_state->bindings.template set_state_value<"camera_to_XYZ">(
+		  lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
 
 		update_scene_colour_space();
 
@@ -1644,63 +1694,51 @@ struct rye_window : virtual public basic_window_api
 
 	void update_scene_colour_space()
 	{
-		// image_viewport_state.compute_bindings
+		// image_viewport_state->bindings
+		//   .template set_state_value<"scene_to_XYZ">(
+		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ()));
+		image_viewport_state->bindings.template set_state_value<"scene_to_XYZ">(
+		  lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
+
+		// image_viewport_state->bindings
+		//   .template set_state_value<"XYZ_to_scene">(
+		//     lak::cobalt::from_lak(scene_primaries.XYZ_to_linear()));
+		image_viewport_state->bindings.template set_state_value<"XYZ_to_scene">(
+		  lak::cobalt::from_lak(camera_primaries.XYZ_to_linear()));
+
+		// image_viewport_state->bindings
 		//   .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ() *
 		//                           camera_primaries.XYZ_to_linear()));
-		image_viewport_state.compute_bindings
+		image_viewport_state->bindings
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      scene_primaries.w, camera_primaries.w)));
-		// image_viewport_state.compute_bindings.template
+
+		// image_viewport_state->bindings.template
 		// set_state_value<"scene_white_XYZ">(
 		//   lak::cobalt::from_lak(scene_primaries.w_XYZ().to_vec()));
-		image_viewport_state.compute_bindings
-		  .template set_state_value<"scene_white_XYZ">(
-		    lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
-
-		// image_viewport_state.compute_bindings
-		//   .template set_state_value<"XYZ_to_scene">(
-		//     lak::cobalt::from_lak(scene_primaries.XYZ_to_linear()));
-		image_viewport_state.compute_bindings
-		  .template set_state_value<"XYZ_to_scene">(
-		    lak::cobalt::from_lak(camera_primaries.XYZ_to_linear()));
-
-		// image_viewport_state.display_bindings
-		//   .template set_state_value<"scene_to_XYZ">(
-		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ()));
-		image_viewport_state.display_bindings
-		  .template set_state_value<"scene_to_XYZ">(
-		    lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
-
-		// image_viewport_state.display_bindings
-		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.display_bindings
-		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		      camera_primaries.w, display_primaries.w)));
+		image_viewport_state->bindings.template set_state_value<"scene_white_XYZ">(
+		  lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
 
 		run_compute = true;
 	}
 
 	void update_display_colour_space()
 	{
-		image_viewport_state.display_bindings
-		  .template set_state_value<"XYZ_to_display">(
-		    lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
+		image_viewport_state->bindings.template set_state_value<"XYZ_to_display">(
+		  lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
 
-		// image_viewport_state.display_bindings
+		// image_viewport_state->bindings
 		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		//       scene_primaries.w, display_primaries.w)));
-		image_viewport_state.display_bindings
+		image_viewport_state->bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, display_primaries.w)));
 
-		image_viewport_state.display_bindings.template set_state_value<"gamma">(
+		image_viewport_state->bindings.template set_state_value<"display_gamma">(
 		  display_gamma);
 	}
 
@@ -1708,7 +1746,7 @@ struct rye_window : virtual public basic_window_api
 	{
 		calculate_camera_white_balance();
 
-		image_viewport_state.compute_bindings
+		image_viewport_state->bindings
 		  .template set_state_value<"raw_white_balance">(
 		    lak::cobalt::from_lak(raw_wb));
 
@@ -1743,7 +1781,7 @@ struct rye_window : virtual public basic_window_api
 					raw_update    = true;
 					time_acc      = 0.f;
 
-					image_viewport_state.clear();
+					image_viewport_state.reset();
 					reset_textures();
 
 					ir_histo.clear();
@@ -1754,6 +1792,13 @@ struct rye_window : virtual public basic_window_api
 
 					image_viewport.reset();
 					finaltex.emplace(raw_image->data);
+
+					modified_size = lak::TextureSize(finaltex);
+
+					image_viewport_state =
+					  rye_gpu_image_process_state::make(
+					    window(), ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
+					    .UNWRAP();
 
 					wb_coef = lak::vec4f_t(raw_image->whitebalance_coef, 0.f);
 					raw_wb  = lak::diagonal(wb_coef.xyz());
@@ -1767,6 +1812,71 @@ struct rye_window : virtual public basic_window_api
 					// calculate_scene_colour_space();
 					scene_primaries   = camera_primaries;
 					display_primaries = lak::col::sRGB_primaries; // camera_primaries;
+
+					// if (image_viewport_state->XYZ_to_display !=
+					//     cobalt::graphics::StateValueId::Null)
+					// {
+					// 	auto &col = lraw->imgdata.color;
+					// 	auto mat  = lak::mat4f_t{
+					//     lak::vec4f_t(col.rgb_cam[0][0],
+					//                  col.rgb_cam[0][1],
+					//                  col.rgb_cam[0][2],
+					//                  col.rgb_cam[0][3]),
+					//     lak::vec4f_t(col.rgb_cam[1][0],
+					//                  col.rgb_cam[1][1],
+					//                  col.rgb_cam[1][2],
+					//                  col.rgb_cam[1][3]),
+					//     lak::vec4f_t(col.rgb_cam[2][0],
+					//                  col.rgb_cam[2][1],
+					//                  col.rgb_cam[2][2],
+					//                  col.rgb_cam[2][3]),
+					//     lak::vec4f_t(0.f, 0.f, 0.f, 1.f),
+					//   };
+					// 	image_viewport_state->state_group_node->SetStateValue(
+					// 	  image_viewport_state->XYZ_to_display,
+					// 	  lak::cobalt::from_lak(mat));
+					// }
+
+					update_camera_colour_space();
+					update_display_colour_space();
+					update_camera_white_balance();
+
+					image_viewport_state->bindings
+					  .template set_state_value<"user_matrix">(
+					    lak::cobalt::from_lak(user_mat));
+
+					image_viewport_state->bindings.template set_state_value<"exposure">(
+					  exposure);
+
+					image_viewport_state->bindings.template set_state_value<"contrast">(
+					  contrast);
+
+					image_viewport_state->bindings.template set_state_value<"lightness">(
+					  lightness);
+
+					image_viewport_state->bindings
+					  .template set_state_value<"saturation">(saturation);
+
+					image_viewport_state->bindings.template set_state_value<"hue">(hue);
+
+					// image_viewport_state->bindings
+					//   .template
+					//   set_state_value<"camera_white_to_display_white_XYZ">(
+					//     lak::cobalt::from_lak(display_primaries.w_XYZ().to_vec()));
+
+					// if (image_viewport_state->temperature !=
+					//     cobalt::graphics::StateValueId::Null)
+					// {
+					// 	auto wb_wv = rye::relative_blackbody(colour_temp);
+					// 	const lak::vec3f_t temp_sensitivity{
+					// 	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
+					// 	const lak::vec3f_t temp_balance =
+					// 	  rye::white_balance(temp_sensitivity);
+					// 	image_viewport_state->state_group_node->SetStateValue(
+					// 	  image_viewport_state->temperature,
+					// 	  lak::cobalt::from_lak(temp_balance));
+					// }
+					run_compute = true;
 				}
 			}
 			ImGui::EndChild();
@@ -1778,38 +1888,44 @@ struct rye_window : virtual public basic_window_api
 			ImGui::Text("No file");
 			ImGui::EndChild();
 		}
-		else
+		else if (image_process && image_process->has_value())
 		{
-			if (image_process && image_process->has_value())
+			image_process.reset();
+			ir_histo    = lak::move(_ir_histo);
+			white_histo = lak::move(_white_histo);
+			srgb_histo  = lak::move(_srgb_histo);
+			// lrawtex.emplace(raw_image->data);
+			// lrprocessedtex.emplace(lrpimg);
+			// lrdebayertex.emplace(lrdimg);
+			// lrsrgbtex.emplace(lrsrgbimg);
+			// lrwavetex.emplace(lrwaveimg);
+			// lrwave2tex.emplace(lrwave2img);
+			image_viewport_state.reset();
+			image_viewport.reset();
+		}
+		else if (raw_update && !image_process)
+		{
+			raw_update = false;
+			desqueeze  = std::max(.5f, std::min(10.f, desqueeze));
+			image_process.reset();
+			// process_image_async(lraw_white_level,
+			//                     ir_balance,
+			//                     colour_temp,
+			//                     exposure,
+			//                     lightness,
+			//                     contrast,
+			//                     saturation,
+			//                     anamorphic ? lak::make_optional(desqueeze)
+			//                                : lak::nullopt);
+		}
+		else if (image_viewport_state)
+		{
+			if (run_compute)
 			{
-				image_process.reset();
-				ir_histo    = lak::move(_ir_histo);
-				white_histo = lak::move(_white_histo);
-				srgb_histo  = lak::move(_srgb_histo);
-				// lrawtex.emplace(raw_image->data);
-				// lrprocessedtex.emplace(lrpimg);
-				// lrdebayertex.emplace(lrdimg);
-				// lrsrgbtex.emplace(lrsrgbimg);
-				// lrwavetex.emplace(lrwaveimg);
-				// lrwave2tex.emplace(lrwave2img);
-				image_viewport_state.clear();
-				image_viewport.reset();
-			}
-
-			if (raw_update && !image_process)
-			{
-				raw_update = false;
-				desqueeze  = std::max(.5f, std::min(10.f, desqueeze));
-				image_process.reset();
-				// process_image_async(lraw_white_level,
-				//                     ir_balance,
-				//                     colour_temp,
-				//                     exposure,
-				//                     lightness,
-				//                     contrast,
-				//                     saturation,
-				//                     anamorphic ? lak::make_optional(desqueeze)
-				//                                : lak::nullopt);
+				lak::cobalt_append_compute_pass(window().handle(),
+				                                image_viewport_state->pass_node.get())
+				  .UNWRAP();
+				run_compute = false;
 			}
 
 			{
@@ -1974,7 +2090,7 @@ struct rye_window : virtual public basic_window_api
 							break;
 					}
 
-					image_viewport_state.compute_bindings
+					image_viewport_state->bindings
 					  .template set_state_value<"user_matrix">(
 					    lak::cobalt::from_lak(user_mat));
 					run_compute = true;
@@ -2052,7 +2168,7 @@ struct rye_window : virtual public basic_window_api
 						user_mat.x.w = 1.f;
 						user_mat.y.w = 1.f;
 						user_mat.z.w = 1.f;
-						image_viewport_state.compute_bindings
+						image_viewport_state->bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
 						run_compute = true;
@@ -2074,7 +2190,7 @@ struct rye_window : virtual public basic_window_api
 
 					if (update_user)
 					{
-						image_viewport_state.compute_bindings
+						image_viewport_state->bindings
 						  .template set_state_value<"user_matrix">(
 						    lak::cobalt::from_lak(user_mat));
 						run_compute = true;
@@ -2149,6 +2265,7 @@ struct rye_window : virtual public basic_window_api
 				ImGui::Separator();
 #endif
 
+				if (false)
 				{
 					update_raw_white_balance |= ImGui::DragFloat(
 					  "Temperature",
@@ -2231,74 +2348,46 @@ struct rye_window : virtual public basic_window_api
 
 				if (ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.f, 1000.f))
 				{
-					image_viewport_state.compute_bindings
-					  .template set_state_value<"exposure">(exposure);
+					image_viewport_state->bindings.template set_state_value<"exposure">(
+					  exposure);
 					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Contrast", &contrast, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.compute_bindings
-					  .template set_state_value<"contrast">(contrast);
+					image_viewport_state->bindings.template set_state_value<"contrast">(
+					  contrast);
 					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Lightness", &lightness, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.compute_bindings
-					  .template set_state_value<"lightness">(lightness);
+					image_viewport_state->bindings.template set_state_value<"lightness">(
+					  lightness);
 					run_compute = true;
 				}
 
 				if (ImGui::DragFloat("Saturation", &saturation, 0.1f, -1000.f, 1000.f))
 				{
-					image_viewport_state.compute_bindings
+					image_viewport_state->bindings
 					  .template set_state_value<"saturation">(saturation);
 					run_compute = true;
 				}
 
 				// if (ImGui::DragFloat("Hue (degrees)", &hue, 1.f, -360.f, 360.f))
 				// {
-				// 	image_viewport_state.compute_bindings.template
+				// 	image_viewport_state->bindings.template
 				// set_state_value<"hue">(hue);
 				// run_compute = true;
 				// }
 
 				ImGui::Separator();
 
+				// LAK_TREE_NODE("Scene Colour Settings")
 				{
-					update_camera_primaries |= lak::ChromaticityEdit(
-					  "Camera",
-					  &camera_primaries,
-					  ImVec2(left_content_size.x, left_content_size.x));
-					if (ImGui::Button("Reset to camera##camera primaries"))
-					{
-						calculate_camera_colour_space();
-						update_camera_primaries = true;
-					}
-					lak::Text<
-					  u8"r: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "g: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "b: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "w: (x:{:-+9.3} y:{:-+.3})">(camera_primaries.r.x,
-					                               camera_primaries.r.y,
-					                               camera_primaries.r.Y,
-					                               camera_primaries.g.x,
-					                               camera_primaries.g.y,
-					                               camera_primaries.g.Y,
-					                               camera_primaries.b.x,
-					                               camera_primaries.b.y,
-					                               camera_primaries.b.Y,
-					                               camera_primaries.w.x,
-					                               camera_primaries.w.y);
-				}
-
-				{
+					auto sz = ImGui::GetContentRegionAvail().x;
 					update_scene_primaries |=
-					  lak::ChromaticityEdit(
-					    "Scene",
-					    &scene_primaries,
-					    ImVec2(left_content_size.x, left_content_size.x)) |
+					  lak::ChromaticityEdit("Scene", &scene_primaries, ImVec2(sz, sz)) |
 					  update_camera_primaries;
 					if (ImGui::Button("Reset to camera##scene primaries"))
 					{
@@ -2327,13 +2416,38 @@ struct rye_window : virtual public basic_window_api
 					                               scene_primaries.w.y);
 				}
 
-				ImGui::Separator();
-
+				LAK_TREE_NODE("Camera Colour Settings")
 				{
+					auto sz = ImGui::GetContentRegionAvail().x;
+					update_camera_primaries |=
+					  lak::ChromaticityEdit("Camera", &camera_primaries, ImVec2(sz, sz));
+					if (ImGui::Button("Reset to camera##camera primaries"))
+					{
+						calculate_camera_colour_space();
+						update_camera_primaries = true;
+					}
+					lak::Text<
+					  u8"r: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "g: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "b: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "w: (x:{:-+9.3} y:{:-+.3})">(camera_primaries.r.x,
+					                               camera_primaries.r.y,
+					                               camera_primaries.r.Y,
+					                               camera_primaries.g.x,
+					                               camera_primaries.g.y,
+					                               camera_primaries.g.Y,
+					                               camera_primaries.b.x,
+					                               camera_primaries.b.y,
+					                               camera_primaries.b.Y,
+					                               camera_primaries.w.x,
+					                               camera_primaries.w.y);
+				}
+
+				LAK_TREE_NODE("Display Colour Settings")
+				{
+					auto sz            = ImGui::GetContentRegionAvail().x;
 					bool update_output = lak::ChromaticityEdit(
-					  "Output",
-					  &display_primaries,
-					  ImVec2(left_content_size.x, left_content_size.x));
+					  "Output", &display_primaries, ImVec2(sz, sz));
 					update_output |=
 					  ImGui::DragFloat("Gamma", &display_gamma, 0.001f, 1.f, 3.f);
 					if (ImGui::Button("sRGB"))
@@ -2394,10 +2508,6 @@ struct rye_window : virtual public basic_window_api
 				if (update_raw_white_balance | update_scene_primaries)
 					update_camera_white_balance();
 
-				ImGui::Separator();
-
-				if (image_process) ImGui::Text("Processing...");
-
 				ImGui::EndChild();
 
 				ImGui::SameLine();
@@ -2426,7 +2536,18 @@ struct rye_window : virtual public basic_window_api
 				}
 #endif
 				// LAK_TREE_NODE("sRGB")
-				if (finaltex)
+
+				// {
+				// 	ImGui::PushID("sRGB");
+				// 	DEFER(ImGui::PopID());
+
+				// 	lak::Image("##view",
+				// 	           (ImTextureID)(uintptr_t)&image_viewport_state
+				// 	             ->display_image_buffer,
+				// 	           image_view_pos,
+				// 	           image_view_scale);
+				// }
+
 				{
 					ImGui::PushID("sRGB");
 					DEFER(ImGui::PopID());
@@ -2435,118 +2556,46 @@ struct rye_window : virtual public basic_window_api
 						image_viewport.emplace(lak::ImTextureColourFormat::RGB,
 						                       lak::ImTextureChannelFormat::U8);
 
-					ImGui::DragFloat("Scale", &lrawsrgbtex_size, 0.01f, 0.1f, 10.0f);
-					ImGui::Separator();
-
-					ImGui::BeginChild("Image View",
-					                  ImVec2(0, 0),
-					                  false,
-					                  ImGuiWindowFlags_NoSavedSettings |
-					                    ImGuiWindowFlags_AlwaysVerticalScrollbar |
-					                    ImGuiWindowFlags_AlwaysHorizontalScrollbar);
-					DEFER(ImGui::EndChild());
-
-					const auto sz = lak::TextureSize(finaltex);
-					auto vpd =
-					  *lak::BeginViewport(image_viewport.get(),
-					                      ImVec2(lrawsrgbtex_size * (float)sz.x,
-					                             lrawsrgbtex_size * (float)sz.y))
-					     .template get<ImGui::ImplCoViewportDetails>();
-					DEFER(lak::EndViewport(image_viewport.get()));
-
-					if (vpd.passes->empty())
+					const auto cursor = ImGui::GetCursorScreenPos();
+					const auto size   = ImGui::GetContentRegionAvail();
 					{
-						auto clear_pass = vpd.append_pass();
-						clear_pass->SetAttachmentClearData(
-						  cobalt::graphics::IFrameBuffer::AttachmentType::Color,
-						  0,
-						  cobalt::graphics::V4Float32{0., 0.3125f, 0.3125f, 1.0f});
-						clear_pass->SetAttachmentClearData(
-						  cobalt::graphics::IFrameBuffer::AttachmentType::Depth,
-						  0,
-						  cobalt::graphics::V4Float32{1.f, 1.f, 1.f, 1.f});
+						const auto tex_size = lak::vec2f_t(lak::TextureSize(finaltex));
+						auto viewport_rect  = ImVec4(
+              image_view_pos.x, image_view_pos.y, tex_size.x, tex_size.y);
+						ImVec4 quad_uv;
+						lak::PanZoomViewportBehaviour("##image_view",
+						                              viewport_rect,
+						                              image_view_scale,
+						                              quad_uv,
+						                              nullptr,
+						                              size);
+						image_view_pos.x = viewport_rect.x;
+						image_view_pos.y = viewport_rect.y;
 
-						auto *display_pass = vpd.append_pass();
-						image_viewport_state =
-						  rye_gpu_image_process_state::make(
-						    window(),
-						    display_pass,
-						    ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
-						    .UNWRAP();
-
-						// if (image_viewport_state.XYZ_to_display !=
-						//     cobalt::graphics::StateValueId::Null)
-						// {
-						// 	auto &col = lraw->imgdata.color;
-						// 	auto mat  = lak::mat4f_t{
-						//     lak::vec4f_t(col.rgb_cam[0][0],
-						//                  col.rgb_cam[0][1],
-						//                  col.rgb_cam[0][2],
-						//                  col.rgb_cam[0][3]),
-						//     lak::vec4f_t(col.rgb_cam[1][0],
-						//                  col.rgb_cam[1][1],
-						//                  col.rgb_cam[1][2],
-						//                  col.rgb_cam[1][3]),
-						//     lak::vec4f_t(col.rgb_cam[2][0],
-						//                  col.rgb_cam[2][1],
-						//                  col.rgb_cam[2][2],
-						//                  col.rgb_cam[2][3]),
-						//     lak::vec4f_t(0.f, 0.f, 0.f, 1.f),
-						//   };
-						// 	image_viewport_state.state_group_node->SetStateValue(
-						// 	  image_viewport_state.XYZ_to_display,
-						// 	  lak::cobalt::from_lak(mat));
-						// }
-
-						update_camera_colour_space();
-						update_display_colour_space();
-						update_camera_white_balance();
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"user_matrix">(
-						    lak::cobalt::from_lak(user_mat));
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"exposure">(exposure);
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"contrast">(contrast);
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"lightness">(lightness);
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"saturation">(saturation);
-
-						image_viewport_state.compute_bindings
-						  .template set_state_value<"hue">(hue);
-
-						// image_viewport_state.compute_bindings
-						//   .template
-						//   set_state_value<"camera_white_to_display_white_XYZ">(
-						//     lak::cobalt::from_lak(display_primaries.w_XYZ().to_vec()));
-
-						// if (image_viewport_state.temperature !=
-						//     cobalt::graphics::StateValueId::Null)
-						// {
-						// 	auto wb_wv = rye::relative_blackbody(colour_temp);
-						// 	const lak::vec3f_t temp_sensitivity{
-						// 	  wb_wv(850.0), wb_wv(600.0), wb_wv(525.0)};
-						// 	const lak::vec3f_t temp_balance =
-						// 	  rye::white_balance(temp_sensitivity);
-						// 	image_viewport_state.state_group_node->SetStateValue(
-						// 	  image_viewport_state.temperature,
-						// 	  lak::cobalt::from_lak(temp_balance));
-						// }
-						run_compute = true;
+						image_viewport_state->display_bindings
+						  .template set_state_value<"image_uv">(lak::cobalt::from_lak(
+						    lak::vec4f_t(quad_uv.x, quad_uv.y, quad_uv.z, quad_uv.w)));
 					}
-					// rye_image_view(lrsrgbtex, &lrawsrgbtex_size);
-
-					if (run_compute && image_viewport_state.compute_pass_node)
+					ImGui::SetCursorScreenPos(cursor);
 					{
-						lak::cobalt_append_compute_pass(
-						  window().handle(), image_viewport_state.compute_pass_node.get());
-						run_compute = false;
+						auto vpd = *lak::BeginViewport(image_viewport.get(), size)
+						              .template get<ImGui::ImplCoViewportDetails>();
+						DEFER(lak::EndViewport(image_viewport.get()));
+
+						if (vpd.passes->empty())
+						{
+							auto clear_pass = vpd.append_pass();
+							clear_pass->SetAttachmentClearData(
+							  cobalt::graphics::IFrameBuffer::AttachmentType::Color,
+							  0,
+							  cobalt::graphics::V4Float32{0.3125f, 0.3125f, 0.3125f, 1.0f});
+							clear_pass->SetAttachmentClearData(
+							  cobalt::graphics::IFrameBuffer::AttachmentType::Depth,
+							  0,
+							  cobalt::graphics::V4Float32{1.f, 1.f, 1.f, 1.f});
+
+							vpd.append_pass(image_viewport_state->display_pass_node.get());
+						}
 					}
 				}
 				ImGui::EndChild();
