@@ -1365,6 +1365,10 @@ struct rye_window : virtual public basic_window_api
 		ifd0.push_Compression(lak::fixed_array(uint16_t(1U)));
 		// LinearRaw
 		ifd0.push_PhotometricInterpretation(lak::fixed_array(uint16_t(34892U)));
+		ifd0.push_Make(
+		  lak::astring_view((const char *)raw_image->camera.make.c_str()));
+		ifd0.push_Model(
+		  lak::astring_view((const char *)raw_image->camera.model.c_str()));
 		ifd0.push_Orientation(lak::fixed_array((uint16_t(1U))));
 		ifd0.push_SamplesPerPixel(lak::fixed_array(uint16_t(3U)));
 
@@ -1400,6 +1404,8 @@ struct rye_window : virtual public basic_window_api
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
 		ifd0.push_DNGBackwardVersion(
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
+		ifd0.push_UniqueCameraModel(lak::string_view(
+		  lak::fmt<"{} {}">(raw_image->camera.make, raw_image->camera.model)));
 		ifd0.push_BlackLevel(lak::fixed_array(uint16_t(0)));
 		ifd0.push_WhiteLevel(lak::fixed_array(uint16_t(UINT16_MAX)));
 		ifd0.push_DefaultCropOrigin(lak::fixed_array(uint32_t(0U), uint32_t(0U)));
@@ -1411,6 +1417,8 @@ struct rye_window : virtual public basic_window_api
 		ifd0.push_ColorMatrix2(iden_matrix);
 		ifd0.push_AsShotNeutral(
 		  lak::fixed_array(uint16_t(1), uint16_t(1), uint16_t(1)));
+		ifd0.push_CameraSerialNumber(
+		  lak::astring_view((const char *)raw_image->camera.serial.c_str()));
 		// same values as LightSource
 		ifd0.push_CalibrationIlluminant1(lak::fixed_array(uint16_t(21U)));
 		ifd0.push_CalibrationIlluminant2(lak::fixed_array(uint16_t(21U)));
@@ -1418,6 +1426,15 @@ struct rye_window : virtual public basic_window_api
 		                                      uint32_t(0U),
 		                                      uint32_t(img16.size().y),
 		                                      uint32_t(img16.size().x)));
+
+		auto &exif = ifd0.push_exif();
+
+		exif.push_LensMake(
+		  lak::astring_view((const char *)raw_image->lens.make.c_str()));
+		exif.push_LensModel(
+		  lak::astring_view((const char *)raw_image->lens.model.c_str()));
+		exif.push_LensSerialNumber(
+		  lak::astring_view((const char *)raw_image->lens.serial.c_str()));
 
 		strm.write<lak::endian::native>(tiff).UNWRAP();
 
