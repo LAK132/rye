@@ -1215,12 +1215,12 @@ struct rye_window : virtual public basic_window_api
 		processedimg.resize(img.size());
 
 		auto to_srgb = [scene_to_XYZ = scene_primaries.linear_to_XYZ(),
-		                adaption     = lak::col::cie::bradford_adaption_matrix(
+		                adaptation   = lak::col::cie::bradford_adaptation_matrix(
                       scene_primaries.w, lak::col::sRGB_primaries.w)](
 		                 const lak::vec3f_t &p) -> lak::vec3f_t
 		{
 			return lak::col::to_sRGB(
-			         lak::col::cie::XYZ::from_vec(adaption * (scene_to_XYZ * p)))
+			         lak::col::cie::XYZ::from_vec(adaptation * (scene_to_XYZ * p)))
 			  .to_vec();
 		};
 		{
@@ -1729,12 +1729,12 @@ struct rye_window : virtual public basic_window_api
 
 		image_viewport_state->bindings
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaptation_matrix(
 		      camera_primaries.w, scene_primaries.w)));
 
 		image_viewport_state->bindings
 		  .template set_state_value<"user_adaptation_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaptation_matrix(
 		      user_white_point, camera_primaries.w)));
 
 		run_compute = true;
@@ -1753,7 +1753,7 @@ struct rye_window : virtual public basic_window_api
 
 		image_viewport_state->bindings
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaptation_matrix(
 		      camera_primaries.w, scene_primaries.w)));
 
 		run_compute = true;
@@ -1766,7 +1766,7 @@ struct rye_window : virtual public basic_window_api
 
 		image_viewport_state->bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaptation_matrix(
 		      scene_primaries.w, display_primaries.w)));
 
 		image_viewport_state->bindings.template set_state_value<"display_gamma">(
@@ -2433,8 +2433,9 @@ struct rye_window : virtual public basic_window_api
 					{
 						image_viewport_state->bindings
 						  .template set_state_value<"user_adaptation_XYZ">(
-						    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-						      user_white_point, camera_primaries.w)));
+						    lak::cobalt::from_lak(
+						      lak::col::cie::bradford_adaptation_matrix(
+						        user_white_point, camera_primaries.w)));
 						run_compute = true;
 					}
 					lak::Text<u8"w: (x:{:-+9.3} y:{:-+.3})">(user_white_point.x,
