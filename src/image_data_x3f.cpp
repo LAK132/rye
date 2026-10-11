@@ -124,86 +124,98 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 			switch (tag.id)
 			{
 				case lak::tiff::tag_name::Make:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const char> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  result.camera.make = lak::to_u8string(
-						    lak::astring_view::from_c_str(data.begin(), data.size()));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>, char>)
+						  {
+							  result.camera.make = lak::to_u8string(
+							    lak::astring_view::from_c_str(data.begin(), data.size()));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::Model:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const char> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  result.camera.model = lak::to_u8string(
-						    lak::astring_view::from_c_str(data.begin(), data.size()));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>, char>)
+						  {
+							  result.camera.model = lak::to_u8string(
+							    lak::astring_view::from_c_str(data.begin(), data.size()));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::LensMake:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const char> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  result.lens.make = lak::to_u8string(
-						    lak::astring_view::from_c_str(data.begin(), data.size()));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>, char>)
+						  {
+							  result.lens.make = lak::to_u8string(
+							    lak::astring_view::from_c_str(data.begin(), data.size()));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::LensModel:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const char> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  result.lens.model = lak::to_u8string(
-						    lak::astring_view::from_c_str(data.begin(), data.size()));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>, char>)
+						  {
+							  result.lens.model = lak::to_u8string(
+							    lak::astring_view::from_c_str(data.begin(), data.size()));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::FNumber:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const lak::tiff::urational> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  if (data.size() > 0U)
-							  result.aperture = float(double(data[0].numerator) /
-							                          double(data[0].denominator));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>,
+						                               lak::tiff::urational>)
+						  {
+							  if (data.size() > 0U)
+								  result.aperture = float(double(data[0].numerator) /
+								                          double(data[0].denominator));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::ExposureTime:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const lak::tiff::urational> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  if (data.size() > 0U)
-							  result.shutter = float(double(data[0].numerator) /
-							                         double(data[0].denominator));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>,
+						                               lak::tiff::urational>)
+						  {
+							  if (data.size() > 0U)
+								  result.shutter = float(double(data[0].numerator) /
+								                         double(data[0].denominator));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::FocalLength:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const lak::tiff::urational> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  if (data.size() > 0U)
-							  result.focal_length = float(double(data[0].numerator) /
-							                              double(data[0].denominator));
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>,
+						                               lak::tiff::urational>)
+						  {
+							  if (data.size() > 0U)
+								  result.focal_length = float(double(data[0].numerator) /
+								                              double(data[0].denominator));
+						  }
+					  });
 					break;
 				case lak::tiff::tag_name::FocalLengthIn35mmFormat:
-					tag.data.visit(lak::overloaded{
-					  [&](lak::span<const uint16_t> data)
+					tag.data.visit(
+					  [&]<typename T>(lak::span<T> data)
 					  {
-						  if (data.size() > 0U) result.focal_length_35mm = float(data[0]);
-					  },
-					  [](const auto &) {},
-					});
+						  if constexpr (lak::is_same_v<lak::remove_cvref_t<T>, uint16_t>)
+						  {
+							  if (data.size() > 0U)
+								  result.focal_length_35mm = float(data[0]);
+						  }
+					  });
 					break;
 				default:
 					break;
@@ -293,7 +305,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 			e.data.visit(lak::overloaded{
 			  [&](const lak::astring &str)
 			  { result.camera.serial = lak::to_u8string(str); },
-			  [](...) {},
+			  [](const auto &) {},
 			});
 		}
 		else if (e.name == "ActiveImageArea"_view)
@@ -317,7 +329,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 				    [](const lak::monostate &) {},
 				  });
 			  },
-			  [](...) {},
+			  [](const auto &) {},
 			});
 		}
 		else if (e.name == "CaptureISO"_view)
@@ -334,7 +346,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 				    [](const lak::monostate &) {},
 				  });
 			  },
-			  [](...) {},
+			  [](const auto &) {},
 			});
 		}
 		else if (e.name == "CaptureAperture"_view)
@@ -351,7 +363,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 				    [](const lak::monostate &) {},
 				  });
 			  },
-			  [](...) {},
+			  [](const auto &) {},
 			});
 		}
 		else if (e.name == "CamToXYZ_Flash"_view || e.name == "CamToXYZ"_view)
@@ -386,7 +398,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 				    [](const lak::monostate &) {},
 				  });
 			  },
-			  [](...) {},
+			  [](const auto &) {},
 			});
 		}
 	}
