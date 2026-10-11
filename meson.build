@@ -130,6 +130,6 @@ executable(
 		rye_lib_dep,
 	],
 	build_by_default: true,
-	install: true,
+	install: get_option('lak_install_targets').contains('rye'),
 	install_rpath: get_option('prefix')/get_option('libdir'),
 )

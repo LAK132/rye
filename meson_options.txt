@@ -4,9 +4,7 @@ option('lak_install_targets',
 	type: 'array',
 	choices: [
 		'cobalt',
-	],
-	value: [
-		'cobalt',
+		'rye',
 	],
 	yield: true,
 )
