@@ -29,13 +29,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, ubuntu-26.04, macos-26, macos-26-intel]
+        # os: [windows-2025, ubuntu-26.04, macos-26, macos-26-intel]
+        os: [windows-2025, macos-26, macos-26-intel]
         arch: [x64, arm64]
         exclude:
           - os: windows-2025
             arch: arm64
-          - os: ubuntu-26.04
-            arch: arm64
+          # - os: ubuntu-26.04
+          #   arch: arm64
           - os: macos-26
             arch: x64
           - os: macos-26-intel
