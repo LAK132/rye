@@ -130,7 +130,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 						  result.camera.make = lak::to_u8string(
 						    lak::astring_view::from_c_str(data.begin(), data.size()));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::Model:
@@ -140,7 +140,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 						  result.camera.model = lak::to_u8string(
 						    lak::astring_view::from_c_str(data.begin(), data.size()));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::LensMake:
@@ -150,7 +150,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 						  result.lens.make = lak::to_u8string(
 						    lak::astring_view::from_c_str(data.begin(), data.size()));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::LensModel:
@@ -160,7 +160,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 						  result.lens.model = lak::to_u8string(
 						    lak::astring_view::from_c_str(data.begin(), data.size()));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::FNumber:
@@ -171,7 +171,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 							  result.aperture = float(double(data[0].numerator) /
 							                          double(data[0].denominator));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::ExposureTime:
@@ -182,7 +182,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 							  result.shutter = float(double(data[0].numerator) /
 							                         double(data[0].denominator));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::FocalLength:
@@ -193,7 +193,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 							  result.focal_length = float(double(data[0].numerator) /
 							                              double(data[0].denominator));
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				case lak::tiff::tag_name::FocalLengthIn35mmFormat:
@@ -202,7 +202,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_x3f(
 					  {
 						  if (data.size() > 0U) result.focal_length_35mm = float(data[0]);
 					  },
-					  [](...) {},
+					  [](const auto &) {},
 					});
 					break;
 				default:
