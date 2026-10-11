@@ -691,7 +691,7 @@ float3 XYZ_to_RGB(float3 colour)
 		 2.36461384f, -0.89654057f, -0.46807328f,
 		-0.51516621f,  1.4264081f,   0.0887581f,
 		 0.0052037f,  -0.01440816f,  1.00920446f};
-	return _XYZ_to_RGB * colour;
+	return mul(colour, _XYZ_to_RGB);
 }
 
 float3 xyY_to_XYZ(float3 colour)
@@ -809,12 +809,12 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	if (any(thread_id.xy >= image_size)) return;
 
 	float3 colour = tex.Load(int3(thread_id.xy, 0)).xyz;
-	colour = raw_white_balance * colour;
-	float4 colour4 = user_matrix * float4(colour, 1.0f);
+	colour = mul(colour, raw_white_balance);
+	float4 colour4 = mul(float4(colour, 1.0f), user_matrix);
 	colour = colour4.xyz / colour4.w;
-	colour = camera_to_XYZ * colour;
-	colour = user_adaptation_XYZ * colour;
-	colour = camera_XYZ_to_scene_XYZ * colour;
+	colour = mul(colour, camera_to_XYZ);
+	colour = mul(colour, user_adaptation_XYZ);
+	colour = mul(colour, camera_XYZ_to_scene_XYZ);
 
 	colour *= exp(exposure);
 
@@ -837,11 +837,11 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	colour = Luv_to_XYZ(colour, XYZ_to_uvY(scene_white_XYZ));
 
 	image_buffer[(thread_id.y * image_size.x) + thread_id.x] =
-		float4(XYZ_to_scene * colour, 1.0f);
+		float4(mul(colour, XYZ_to_scene), 1.0f);
 
-	colour = scene_XYZ_to_display_XYZ * colour;
+	colour = mul(colour, scene_XYZ_to_display_XYZ);
 
-	colour = XYZ_to_display * colour;
+	colour = mul(colour, XYZ_to_display);
 
 	// display_image_buffer[thread_id.xy] =
 	display_image_buffer[(thread_id.y * image_size.x) + thread_id.x] =
