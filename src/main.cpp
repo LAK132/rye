@@ -813,8 +813,8 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	float4 colour4 = user_matrix * float4(colour, 1.0f);
 	colour = colour4.xyz / colour4.w;
 	colour = camera_to_XYZ * colour;
-	colour = camera_XYZ_to_scene_XYZ * colour;
 	colour = user_adaptation_XYZ * colour;
+	colour = camera_XYZ_to_scene_XYZ * colour;
 
 	colour *= exp(exposure);
 
@@ -1732,6 +1732,11 @@ struct rye_window : virtual public basic_window_api
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, scene_primaries.w)));
 
+		image_viewport_state->bindings
+		  .template set_state_value<"user_adaptation_XYZ">(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		      user_white_point, camera_primaries.w)));
+
 		run_compute = true;
 	}
 
@@ -1750,11 +1755,6 @@ struct rye_window : virtual public basic_window_api
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
 		      camera_primaries.w, scene_primaries.w)));
-
-		image_viewport_state->bindings
-		  .template set_state_value<"user_adaptation_XYZ">(
-		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		      scene_primaries.w, user_white_point)));
 
 		run_compute = true;
 	}
@@ -2418,15 +2418,15 @@ struct rye_window : virtual public basic_window_api
 
 				{
 					auto sz        = ImGui::GetContentRegionAvail().x;
-					auto primaries = scene_primaries;
+					auto primaries = camera_primaries;
 					primaries.w    = user_white_point;
 					primaries.regenerate_Y();
 					update_user_adapt |=
 					  lak::ChromaticityEdit("White point", &primaries, ImVec2(sz, sz));
 					user_white_point = primaries.w;
-					if (ImGui::Button("Reset to scene##user adapt"))
+					if (ImGui::Button("Reset to camera##user"))
 					{
-						user_white_point  = scene_primaries.w;
+						user_white_point  = camera_primaries.w;
 						update_user_adapt = true;
 					}
 					if (update_user_adapt)
@@ -2434,7 +2434,7 @@ struct rye_window : virtual public basic_window_api
 						image_viewport_state->bindings
 						  .template set_state_value<"user_adaptation_XYZ">(
 						    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-						      scene_primaries.w, user_white_point)));
+						      user_white_point, camera_primaries.w)));
 						run_compute = true;
 					}
 					lak::Text<u8"w: (x:{:-+9.3} y:{:-+.3})">(user_white_point.x,
