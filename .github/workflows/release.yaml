@@ -76,7 +76,7 @@ jobs:
           echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> $GITHUB_ENV
 
       - if: startsWith(matrix.os, 'windows')
-        run: meson setup build --buildtype=release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin -Dlicensedir="share\licenses" -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" "-Dcobalt_renderer=OpenGL4,Direct3D11,Direct3D12"
+        run: meson setup build --buildtype=release -Dprefix="$pwd\install" -Dbindir=bin -Dlibdir=bin -Dlicensedir="share\licenses" -Dcpp_args="-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" "-Dlak_backend=win32" "-Dcobalt_renderer=OpenGL4,Direct3D11,Direct3D12"
       - if: startsWith(matrix.os, 'ubuntu')
         run: meson setup build --buildtype=release -Dprefix="$(pwd)/install" -Dlicensedir="share/licenses" "-Dcobalt_renderer=OpenGL4"
       - if: startsWith(matrix.os, 'macos')
