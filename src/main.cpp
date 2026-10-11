@@ -1465,7 +1465,7 @@ struct rye_window : virtual public basic_window_api
 			{
 				save_dng_pgetter.save_file(
 				  file_path().parent_path() /
-				    (file_path().stem().u8string() + u8".DNG"),
+				    (file_path().stem().u8string() + u8"_RYE.DNG"),
 				  "Image Files{.DNG}");
 			}
 
@@ -1473,12 +1473,12 @@ struct rye_window : virtual public basic_window_api
 			{
 				save_png_pgetter.save_file(
 				  file_path().parent_path() /
-				    (file_path().stem().u8string() + u8".PNG"),
+				    (file_path().stem().u8string() + u8"_RYE.PNG"),
 				  "Image Files{.PNG}");
 			}
 
 			if (auto path = file_path().parent_path() /
-			                (file_path().stem().u8string() + u8".DNG");
+			                (file_path().stem().u8string() + u8"_RYE.DNG");
 			    ImGui::MenuItem(
 			      "Quick save DNG", path.string().c_str(), false, can_save))
 			{
@@ -1486,7 +1486,7 @@ struct rye_window : virtual public basic_window_api
 			}
 
 			if (auto path = file_path().parent_path() /
-			                (file_path().stem().u8string() + u8".PNG");
+			                (file_path().stem().u8string() + u8"_RYE.PNG");
 			    ImGui::MenuItem(
 			      "Quick save PNG", path.string().c_str(), false, can_save))
 			{
