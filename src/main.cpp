@@ -469,6 +469,8 @@ struct rye_gpu_image_process_state
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "camera_XYZ_to_scene_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
+	                                     "user_adaptation_XYZ">,
+	    lak::cobalt::state_value_binding<cobalt::graphics::M3Float32,
 	                                     "scene_XYZ_to_display_XYZ">,
 	    lak::cobalt::state_value_binding<cobalt::graphics::M4Float32,
 	                                     "user_matrix">,
@@ -671,6 +673,7 @@ uniform row_major float3x3 scene_to_XYZ;
 uniform row_major float3x3 XYZ_to_scene;
 uniform row_major float3x3 XYZ_to_display;
 uniform row_major float3x3 camera_XYZ_to_scene_XYZ;
+uniform row_major float3x3 user_adaptation_XYZ;
 uniform row_major float3x3 scene_XYZ_to_display_XYZ;
 uniform row_major float3x3 raw_white_balance;
 uniform row_major float4x4 user_matrix;
@@ -811,6 +814,7 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 	colour = colour4.xyz / colour4.w;
 	colour = camera_to_XYZ * colour;
 	colour = camera_XYZ_to_scene_XYZ * colour;
+	colour = user_adaptation_XYZ * colour;
 
 	colour *= exp(exposure);
 
@@ -1070,6 +1074,8 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
 		state.bindings.template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
+		state.bindings.template set_state_value<"user_adaptation_XYZ">(
+		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
 		state.bindings.template set_state_value<"scene_XYZ_to_display_XYZ">(
 		  lak::cobalt::from_lak(lak::diagonal(lak::vec3f_t(1.f))));
 		state.bindings.template set_state_value<"user_matrix">(
@@ -1195,7 +1201,7 @@ struct rye_window : virtual public basic_window_api
 		return lak::move_ok(img);
 	}
 
-	void save_png_file(const lak::fs::path &path, bool linear)
+	void save_png_file(const lak::fs::path &path)
 	{
 		auto image = read_gpu_image();
 		if_let_err (const auto &error, image)
@@ -1208,11 +1214,10 @@ struct rye_window : virtual public basic_window_api
 		lak::image3_t processedimg;
 		processedimg.resize(img.size());
 
-		auto to_srgb =
-		  [scene_to_XYZ = /*scene_primaries*/ camera_primaries.linear_to_XYZ(),
-		   adaption     = lak::col::cie::bradford_adaption_matrix(
-         /*scene_primaries*/ camera_primaries.w, lak::col::sRGB_primaries.w)](
-		    const lak::vec3f_t &p) -> lak::vec3f_t
+		auto to_srgb = [scene_to_XYZ = scene_primaries.linear_to_XYZ(),
+		                adaption     = lak::col::cie::bradford_adaption_matrix(
+                      scene_primaries.w, lak::col::sRGB_primaries.w)](
+		                 const lak::vec3f_t &p) -> lak::vec3f_t
 		{
 			return lak::col::to_sRGB(
 			         lak::col::cie::XYZ::from_vec(adaption * (scene_to_XYZ * p)))
@@ -1225,24 +1230,13 @@ struct rye_window : virtual public basic_window_api
 				tasks.push(
 				  [&, y = y]()
 				  {
-					  if (linear)
-						  for (size_t x = 0; x < img.size().x; ++x)
-						  {
-							  processedimg[{x, y}].r =
-							    lak::frac_to_int<uint8_t>(img[{x, y}].r);
-							  processedimg[{x, y}].g =
-							    lak::frac_to_int<uint8_t>(img[{x, y}].g);
-							  processedimg[{x, y}].b =
-							    lak::frac_to_int<uint8_t>(img[{x, y}].b);
-						  }
-					  else
-						  for (size_t x = 0; x < img.size().x; ++x)
-						  {
-							  auto srgb              = to_srgb(img[{x, y}].xyz());
-							  processedimg[{x, y}].r = lak::frac_to_int<uint8_t>(srgb.r);
-							  processedimg[{x, y}].g = lak::frac_to_int<uint8_t>(srgb.g);
-							  processedimg[{x, y}].b = lak::frac_to_int<uint8_t>(srgb.b);
-						  }
+					  for (lak::vec2s_t xy{0U, y}; xy.x < img.size().x; ++xy.x)
+					  {
+						  auto srgb          = to_srgb(img[xy].xyz());
+						  processedimg[xy].r = lak::frac_to_int<uint8_t>(srgb.r);
+						  processedimg[xy].g = lak::frac_to_int<uint8_t>(srgb.g);
+						  processedimg[xy].b = lak::frac_to_int<uint8_t>(srgb.b);
+					  }
 				  });
 			}
 		}
@@ -1283,13 +1277,20 @@ struct rye_window : virtual public basic_window_api
 		lak::image<lak::vec3u16_t> img16;
 		img16.resize(img.size());
 
-		for (lak::vec2s_t xy = {0, 0}; xy.y < img16.size().y; ++xy.y)
 		{
-			for (xy.x = 0; xy.x < img16.size().x; ++xy.x)
+			lak::tasks tasks{lak::tasks::hardware_max()};
+			for (size_t y = 0U; y < img16.size().y; ++y)
 			{
-				img16[xy].r = lak::frac_to_int<uint16_t>(img[xy].r);
-				img16[xy].g = lak::frac_to_int<uint16_t>(img[xy].g);
-				img16[xy].b = lak::frac_to_int<uint16_t>(img[xy].b);
+				tasks.push(
+				  [&, y = y]()
+				  {
+					  for (lak::vec2s_t xy{0U, y}; xy.x < img16.size().x; ++xy.x)
+					  {
+						  img16[xy].r = lak::frac_to_int<uint16_t>(img[xy].r);
+						  img16[xy].g = lak::frac_to_int<uint16_t>(img[xy].g);
+						  img16[xy].b = lak::frac_to_int<uint16_t>(img[xy].b);
+					  }
+				  });
 			}
 		}
 
@@ -1324,6 +1325,36 @@ struct rye_window : virtual public basic_window_api
 			  .UNWRAP();
 		}
 
+		auto float_to_rational = [](float value,
+		                            uint32_t decimal_places) -> lak::tiff::rational
+		{
+			uint32_t divisor = 1U;
+			while (decimal_places-- > 0U) divisor *= 10U;
+			value *= divisor;
+			return lak::tiff::rational{uint32_t(value), divisor};
+		};
+
+		auto mat_to_rational =
+		  [&](lak::mat3f_t mat,
+		      uint32_t decimal_places) -> lak::array<lak::tiff::rational, 9U>
+		{
+			return lak::fixed_array(float_to_rational(mat.x.x, decimal_places),
+			                        float_to_rational(mat.x.y, decimal_places),
+			                        float_to_rational(mat.x.z, decimal_places),
+
+			                        float_to_rational(mat.y.x, decimal_places),
+			                        float_to_rational(mat.y.y, decimal_places),
+			                        float_to_rational(mat.y.z, decimal_places),
+
+			                        float_to_rational(mat.z.x, decimal_places),
+			                        float_to_rational(mat.z.y, decimal_places),
+			                        float_to_rational(mat.z.z, decimal_places));
+		};
+
+		auto dng_primaries = scene_primaries;
+		dng_primaries.w    = lak::col::cie::D65_xy;
+		dng_primaries.regenerate_Y();
+
 		ifd0.push_NewSubfileType(lak::fixed_array(uint32_t(0U)));
 		ifd0.push_ImageWidth(
 		  lak::fixed_array(static_cast<uint32_t>(img16.size().x)));
@@ -1334,10 +1365,6 @@ struct rye_window : virtual public basic_window_api
 		ifd0.push_Compression(lak::fixed_array(uint16_t(1U)));
 		// LinearRaw
 		ifd0.push_PhotometricInterpretation(lak::fixed_array(uint16_t(34892U)));
-		ifd0.push_Make(
-		  lak::astring_view((const char *)raw_image->camera.make.c_str()));
-		ifd0.push_Model(
-		  lak::astring_view((const char *)raw_image->camera.model.c_str()));
 		ifd0.push_Orientation(lak::fixed_array((uint16_t(1U))));
 		ifd0.push_SamplesPerPixel(lak::fixed_array(uint16_t(3U)));
 
@@ -1347,6 +1374,16 @@ struct rye_window : virtual public basic_window_api
 		  lak::tiff::urational{.numerator = 300, .denominator = 1}));
 		ifd0.push_ResolutionUnit(lak::fixed_array(uint16_t(2U)));
 		ifd0.push_Software(APP_NAME ""_view);
+		ifd0.push_WhitePoint(lak::fixed_array(
+		  lak::tiff::urational{uint32_t(dng_primaries.w.x * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.w.y * 1000.f), 1000U}));
+		ifd0.push_PrimaryChromaticities(lak::fixed_array(
+		  lak::tiff::urational{uint32_t(dng_primaries.g.x * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.g.y * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.b.x * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.b.y * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.r.x * 1000.f), 1000U},
+		  lak::tiff::urational{uint32_t(dng_primaries.r.y * 1000.f), 1000U}));
 		ifd0.push_SampleFormat({1U});
 
 		if (raw_image->shutter != 0.f)
@@ -1355,6 +1392,7 @@ struct rye_window : virtual public basic_window_api
 		ifd0.push_FNumber(lak::fixed_array(
 		  lak::tiff::urational{uint32_t(raw_image->aperture * 100), 100U}));
 		ifd0.push_ISOSpeedRatings(lak::fixed_array(uint16_t(raw_image->iso)));
+		ifd0.push_LightSource(lak::fixed_array(uint16_t(21U)));
 		ifd0.push_FocalLength(lak::fixed_array(
 		  lak::tiff::urational{uint32_t(raw_image->focal_length * 100), 100U}));
 
@@ -1362,19 +1400,24 @@ struct rye_window : virtual public basic_window_api
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
 		ifd0.push_DNGBackwardVersion(
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
-		ifd0.push_UniqueCameraModel(lak::string_view(
-		  lak::fmt<"{} {}">(raw_image->camera.make, raw_image->camera.model)));
-		ifd0.push_CameraSerialNumber(
-		  lak::astring_view((const char *)raw_image->camera.serial.c_str()));
-
-		auto &exif = ifd0.push_exif();
-
-		exif.push_LensMake(
-		  lak::astring_view((const char *)raw_image->lens.make.c_str()));
-		exif.push_LensModel(
-		  lak::astring_view((const char *)raw_image->lens.model.c_str()));
-		exif.push_LensSerialNumber(
-		  lak::astring_view((const char *)raw_image->lens.serial.c_str()));
+		ifd0.push_BlackLevel(lak::fixed_array(uint16_t(0)));
+		ifd0.push_WhiteLevel(lak::fixed_array(uint16_t(UINT16_MAX)));
+		ifd0.push_DefaultCropOrigin(lak::fixed_array(uint32_t(0U), uint32_t(0U)));
+		ifd0.push_DefaultCropSize(
+		  lak::fixed_array(uint32_t(img16.size().x), uint32_t(img16.size().y)));
+		const auto iden_matrix =
+		  mat_to_rational(dng_primaries.XYZ_to_linear(), 6U);
+		ifd0.push_ColorMatrix1(iden_matrix);
+		ifd0.push_ColorMatrix2(iden_matrix);
+		ifd0.push_AsShotNeutral(
+		  lak::fixed_array(uint16_t(1), uint16_t(1), uint16_t(1)));
+		// same values as LightSource
+		ifd0.push_CalibrationIlluminant1(lak::fixed_array(uint16_t(21U)));
+		ifd0.push_CalibrationIlluminant2(lak::fixed_array(uint16_t(21U)));
+		ifd0.push_ActiveArea(lak::fixed_array(uint32_t(0U),
+		                                      uint32_t(0U),
+		                                      uint32_t(img16.size().y),
+		                                      uint32_t(img16.size().x)));
 
 		strm.write<lak::endian::native>(tiff).UNWRAP();
 
@@ -1386,13 +1429,11 @@ struct rye_window : virtual public basic_window_api
 	bool update() { return binary_update || raw_update; }
 
 	lak::path_getter open_pgetter, save_png_pgetter, save_dng_pgetter;
-	bool save_srgb_png = false;
 
 	void file_menu()
 	{
 		if (auto res = open_pgetter(); res) open_file(*res);
-		if (auto res = save_png_pgetter(); res)
-			save_png_file(*res, !save_srgb_png);
+		if (auto res = save_png_pgetter(); res) save_png_file(*res);
 		if (auto res = save_dng_pgetter(); res) save_dng_file(*res);
 
 		if (ImGui::BeginMenu("File"))
@@ -1403,7 +1444,7 @@ struct rye_window : virtual public basic_window_api
 				  file_path(),
 				  "Raw Image Files{.ARW,.RAF,.NEF,.CR3,.CR2,.DNG,.X3F},.*");
 
-			if (ImGui::MenuItem("Save DNG...", nullptr, false, can_save))
+			if (ImGui::MenuItem("Save as DNG...", nullptr, false, can_save))
 			{
 				save_dng_pgetter.save_file(
 				  file_path().parent_path() /
@@ -1411,30 +1452,29 @@ struct rye_window : virtual public basic_window_api
 				  "Image Files{.DNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (linear)...", nullptr, false, can_save))
+			if (ImGui::MenuItem("Save as PNG...", nullptr, false, can_save))
 			{
-				save_srgb_png = false;
 				save_png_pgetter.save_file(
 				  file_path().parent_path() /
 				    (file_path().stem().u8string() + u8".PNG"),
 				  "Image Files{.PNG}");
 			}
 
-			if (ImGui::MenuItem("Save PNG (sRGB)...", nullptr, false, can_save))
+			if (auto path = file_path().parent_path() /
+			                (file_path().stem().u8string() + u8".DNG");
+			    ImGui::MenuItem(
+			      "Quick save DNG", path.string().c_str(), false, can_save))
 			{
-				save_srgb_png = true;
-				save_png_pgetter.save_file(
-				  file_path().parent_path() /
-				    (file_path().stem().u8string() + u8".PNG"),
-				  "Image Files{.PNG}");
+				save_dng_file(path);
 			}
 
-			// if (ImGui::MenuItem(
-			//       "Save DNG...", nullptr, false, lrdimg.contig_size() != 0U))
-			// 	save_dng_pgetter.save_file(
-			// 	  file_path().parent_path() /
-			// 	    (file_path().stem().u8string() + u8".DNG"),
-			// 	  "Image Files{.DNG}");
+			if (auto path = file_path().parent_path() /
+			                (file_path().stem().u8string() + u8".PNG");
+			    ImGui::MenuItem(
+			      "Quick save PNG", path.string().c_str(), false, can_save))
+			{
+				save_png_file(path);
+			}
 
 			ImGui::EndMenu();
 		}
@@ -1528,14 +1568,9 @@ struct rye_window : virtual public basic_window_api
 	  lak::col::ProPhotoRGB_primaries;
 	lak::col::cie::xyY_primaries scene_primaries =
 	  lak::col::ProPhotoRGB_primaries;
+	lak::col::cie::xy user_white_point = lak::col::ProPhotoRGB_primaries.w;
 	lak::col::cie::xyY_primaries display_primaries = lak::col::sRGB_primaries;
 	float display_gamma                            = 2.2f;
-	// lak::col::cie::xyY_primaries display_primaries{
-	//   .r = lak::col::sRGB_primaries.b,
-	//   .g = lak::col::sRGB_primaries.r,
-	//   .b = lak::col::sRGB_primaries.g,
-	//   .w = lak::col::sRGB_primaries.w,
-	// };
 
 	enum struct colour_space_method : int
 	{
@@ -1593,18 +1628,6 @@ struct rye_window : virtual public basic_window_api
 		  lak::col::cie::to_xyY(lak::col::cie::XYZ::from_vec(prim.z));
 		camera_primaries.regenerate_w();
 		camera_primaries.regenerate_Y();
-	}
-
-	void calculate_scene_colour_space()
-	{
-		// const auto w      = scene_primaries.w;
-		// scene_primaries   = camera_primaries;
-		// scene_primaries.w = w;
-		// scene_primaries =
-		//   lak::col::cie::bradford_adapt(scene_primaries, camera_primaries.w);
-		// scene_primaries.w = w;
-		// scene_primaries =
-		//   lak::col::cie::bradford_adapt(camera_primaries, scene_primaries.w);
 	}
 
 	void calculate_camera_white_balance()
@@ -1687,39 +1710,34 @@ struct rye_window : virtual public basic_window_api
 		image_viewport_state->bindings.template set_state_value<"camera_to_XYZ">(
 		  lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
 
-		update_scene_colour_space();
+		image_viewport_state->bindings
+		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		      camera_primaries.w, scene_primaries.w)));
 
 		run_compute = true;
 	}
 
 	void update_scene_colour_space()
 	{
-		// image_viewport_state->bindings
-		//   .template set_state_value<"scene_to_XYZ">(
-		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ()));
 		image_viewport_state->bindings.template set_state_value<"scene_to_XYZ">(
-		  lak::cobalt::from_lak(camera_primaries.linear_to_XYZ()));
+		  lak::cobalt::from_lak(scene_primaries.linear_to_XYZ()));
 
-		// image_viewport_state->bindings
-		//   .template set_state_value<"XYZ_to_scene">(
-		//     lak::cobalt::from_lak(scene_primaries.XYZ_to_linear()));
 		image_viewport_state->bindings.template set_state_value<"XYZ_to_scene">(
-		  lak::cobalt::from_lak(camera_primaries.XYZ_to_linear()));
+		  lak::cobalt::from_lak(scene_primaries.XYZ_to_linear()));
 
-		// image_viewport_state->bindings
-		//   .template set_state_value<"camera_XYZ_to_scene_XYZ">(
-		//     lak::cobalt::from_lak(scene_primaries.linear_to_XYZ() *
-		//                           camera_primaries.XYZ_to_linear()));
+		image_viewport_state->bindings.template set_state_value<"scene_white_XYZ">(
+		  lak::cobalt::from_lak(scene_primaries.w_XYZ().to_vec()));
+
 		image_viewport_state->bindings
 		  .template set_state_value<"camera_XYZ_to_scene_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		      scene_primaries.w, camera_primaries.w)));
+		      camera_primaries.w, scene_primaries.w)));
 
-		// image_viewport_state->bindings.template
-		// set_state_value<"scene_white_XYZ">(
-		//   lak::cobalt::from_lak(scene_primaries.w_XYZ().to_vec()));
-		image_viewport_state->bindings.template set_state_value<"scene_white_XYZ">(
-		  lak::cobalt::from_lak(camera_primaries.w_XYZ().to_vec()));
+		image_viewport_state->bindings
+		  .template set_state_value<"user_adaptation_XYZ">(
+		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+		      scene_primaries.w, user_white_point)));
 
 		run_compute = true;
 	}
@@ -1729,17 +1747,15 @@ struct rye_window : virtual public basic_window_api
 		image_viewport_state->bindings.template set_state_value<"XYZ_to_display">(
 		  lak::cobalt::from_lak(display_primaries.XYZ_to_linear()));
 
-		// image_viewport_state->bindings
-		//   .template set_state_value<"scene_XYZ_to_display_XYZ">(
-		//     lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		//       scene_primaries.w, display_primaries.w)));
 		image_viewport_state->bindings
 		  .template set_state_value<"scene_XYZ_to_display_XYZ">(
 		    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
-		      camera_primaries.w, display_primaries.w)));
+		      scene_primaries.w, display_primaries.w)));
 
 		image_viewport_state->bindings.template set_state_value<"display_gamma">(
 		  display_gamma);
+
+		run_compute = true;
 	}
 
 	void update_camera_white_balance()
@@ -1809,9 +1825,8 @@ struct rye_window : virtual public basic_window_api
 
 					calculate_camera_colour_space();
 					calculate_camera_white_balance();
-					// calculate_scene_colour_space();
-					scene_primaries   = camera_primaries;
-					display_primaries = lak::col::sRGB_primaries; // camera_primaries;
+					scene_primaries   = lak::col::ProPhotoRGB_primaries;
+					display_primaries = lak::col::sRGB_primaries;
 
 					// if (image_viewport_state->XYZ_to_display !=
 					//     cobalt::graphics::StateValueId::Null)
@@ -2010,6 +2025,7 @@ struct rye_window : virtual public basic_window_api
 
 				bool update_camera_primaries  = false;
 				bool update_scene_primaries   = false;
+				bool update_user_adapt        = false;
 				bool update_raw_white_balance = false;
 				bool update_user_mat          = false;
 				{
@@ -2383,38 +2399,32 @@ struct rye_window : virtual public basic_window_api
 
 				ImGui::Separator();
 
-				// LAK_TREE_NODE("Scene Colour Settings")
 				{
-					auto sz = ImGui::GetContentRegionAvail().x;
-					update_scene_primaries |=
-					  lak::ChromaticityEdit("Scene", &scene_primaries, ImVec2(sz, sz)) |
-					  update_camera_primaries;
-					if (ImGui::Button("Reset to camera##scene primaries"))
+					auto sz        = ImGui::GetContentRegionAvail().x;
+					auto primaries = scene_primaries;
+					primaries.w    = user_white_point;
+					primaries.regenerate_Y();
+					update_user_adapt |=
+					  lak::ChromaticityEdit("White point", &primaries, ImVec2(sz, sz));
+					user_white_point = primaries.w;
+					if (ImGui::Button("Reset to scene##user adapt"))
 					{
-						scene_primaries        = camera_primaries;
-						update_scene_primaries = true;
+						user_white_point  = scene_primaries.w;
+						update_user_adapt = true;
 					}
-					if (update_scene_primaries)
+					if (update_user_adapt)
 					{
-						calculate_scene_colour_space();
-						update_scene_colour_space();
+						image_viewport_state->bindings
+						  .template set_state_value<"user_adaptation_XYZ">(
+						    lak::cobalt::from_lak(lak::col::cie::bradford_adaption_matrix(
+						      scene_primaries.w, user_white_point)));
+						run_compute = true;
 					}
-					lak::Text<
-					  u8"r: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "g: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "b: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
-					  "w: (x:{:-+9.3} y:{:-+.3})">(scene_primaries.r.x,
-					                               scene_primaries.r.y,
-					                               scene_primaries.r.Y,
-					                               scene_primaries.g.x,
-					                               scene_primaries.g.y,
-					                               scene_primaries.g.Y,
-					                               scene_primaries.b.x,
-					                               scene_primaries.b.y,
-					                               scene_primaries.b.Y,
-					                               scene_primaries.w.x,
-					                               scene_primaries.w.y);
+					lak::Text<u8"w: (x:{:-+9.3} y:{:-+.3})">(user_white_point.x,
+					                                         user_white_point.y);
 				}
+
+				ImGui::Separator();
 
 				LAK_TREE_NODE("Camera Colour Settings")
 				{
@@ -2443,6 +2453,70 @@ struct rye_window : virtual public basic_window_api
 					                               camera_primaries.w.y);
 				}
 
+				LAK_TREE_NODE("Scene Colour Settings")
+				{
+					auto sz = ImGui::GetContentRegionAvail().x;
+					update_scene_primaries |=
+					  lak::ChromaticityEdit("Scene", &scene_primaries, ImVec2(sz, sz)) |
+					  update_camera_primaries;
+					if (ImGui::Button("ProPhoto RGB##scene"))
+					{
+						scene_primaries        = lak::col::ProPhotoRGB_primaries;
+						update_scene_primaries = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("sRGB##scene"))
+					{
+						scene_primaries        = lak::col::sRGB_primaries;
+						update_scene_primaries = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Adobe RGB##scene"))
+					{
+						scene_primaries        = lak::col::opRGB_primaries;
+						update_scene_primaries = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Camera (RAW)##scene"))
+					{
+						auto prim = lak::transpose(cam_to_XYZ);
+						scene_primaries.r =
+						  lak::col::cie::to_xyY(lak::col::cie::XYZ::from_vec(prim.x));
+						scene_primaries.g =
+						  lak::col::cie::to_xyY(lak::col::cie::XYZ::from_vec(prim.y));
+						scene_primaries.b =
+						  lak::col::cie::to_xyY(lak::col::cie::XYZ::from_vec(prim.z));
+						scene_primaries.regenerate_w();
+						scene_primaries.regenerate_Y();
+						update_scene_primaries = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Camera (current)##scene"))
+					{
+						scene_primaries        = camera_primaries;
+						update_scene_primaries = true;
+					}
+					if (update_scene_primaries)
+					{
+						update_scene_colour_space();
+					}
+					lak::Text<
+					  u8"r: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "g: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "b: (x:{:-+9.3} y:{:-+9.3} Y:{:-+.3})\n"
+					  "w: (x:{:-+9.3} y:{:-+.3})">(scene_primaries.r.x,
+					                               scene_primaries.r.y,
+					                               scene_primaries.r.Y,
+					                               scene_primaries.g.x,
+					                               scene_primaries.g.y,
+					                               scene_primaries.g.Y,
+					                               scene_primaries.b.x,
+					                               scene_primaries.b.y,
+					                               scene_primaries.b.Y,
+					                               scene_primaries.w.x,
+					                               scene_primaries.w.y);
+				}
+
 				LAK_TREE_NODE("Display Colour Settings")
 				{
 					auto sz            = ImGui::GetContentRegionAvail().x;
@@ -2450,21 +2524,28 @@ struct rye_window : virtual public basic_window_api
 					  "Output", &display_primaries, ImVec2(sz, sz));
 					update_output |=
 					  ImGui::DragFloat("Gamma", &display_gamma, 0.001f, 1.f, 3.f);
-					if (ImGui::Button("sRGB"))
+					if (ImGui::Button("ProPhoto##display"))
+					{
+						display_gamma     = 1.f;
+						display_primaries = lak::col::ProPhotoRGB_primaries;
+						update_output     = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("sRGB##display"))
 					{
 						display_gamma     = 2.2f;
 						display_primaries = lak::col::sRGB_primaries;
 						update_output     = true;
 					}
 					ImGui::SameLine();
-					if (ImGui::Button("Adobe RGB"))
+					if (ImGui::Button("Adobe RGB##display"))
 					{
 						display_gamma     = 1.f;
 						display_primaries = lak::col::opRGB_primaries;
 						update_output     = true;
 					}
 					ImGui::SameLine();
-					if (ImGui::Button("Camera (RAW)"))
+					if (ImGui::Button("Camera (RAW)##display"))
 					{
 						display_gamma = 1.f;
 						auto prim     = lak::transpose(cam_to_XYZ);
@@ -2479,7 +2560,7 @@ struct rye_window : virtual public basic_window_api
 						update_output = true;
 					}
 					ImGui::SameLine();
-					if (ImGui::Button("Camera (current)"))
+					if (ImGui::Button("Camera (current)##display"))
 					{
 						display_gamma     = 1.f;
 						display_primaries = camera_primaries;

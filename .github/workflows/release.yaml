@@ -65,9 +65,11 @@ jobs:
           platform: ${{ matrix.arch }}
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
+          sudo apt-get autopurge -y needrestart
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libx11-xcb-dev libxrandr-dev libwayland-dev libcairo2-dev libegl1-mesa-dev libgbm-dev
           sudo python3 -m pip install --upgrade setuptools
           sudo python3 -m pip install meson ninja
-          sudo apt install libx11-dev libx11-xcb-dev libxrandr-dev libwayland-dev libcairo2-dev libegl1-mesa-dev libgbm-dev
 
       - if: startsWith(matrix.os, 'macos')
         run: |
