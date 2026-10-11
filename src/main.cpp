@@ -1826,8 +1826,6 @@ struct rye_window : virtual public basic_window_api
 					image_viewport.reset();
 					finaltex.emplace(raw_image->data);
 
-					modified_size = lak::TextureSize(finaltex);
-
 					image_viewport_state =
 					  rye_gpu_image_process_state::make(
 					    window(), ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
