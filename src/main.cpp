@@ -1328,10 +1328,10 @@ struct rye_window : virtual public basic_window_api
 		auto float_to_rational = [](float value,
 		                            uint32_t decimal_places) -> lak::tiff::rational
 		{
-			uint32_t divisor = 1U;
+			int32_t divisor = 1;
 			while (decimal_places-- > 0U) divisor *= 10U;
 			value *= divisor;
-			return lak::tiff::rational{uint32_t(value), divisor};
+			return lak::tiff::rational{int32_t(value), divisor};
 		};
 
 		auto mat_to_rational =
