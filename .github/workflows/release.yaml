@@ -105,4 +105,4 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true
-          files: install/bin/RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz
+          files: install/RYE-${{ needs.create-release.outputs.tag }}-${{ runner.os }}-${{ matrix.arch }}.tar.gz
