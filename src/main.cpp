@@ -1388,8 +1388,8 @@ struct rye_window : virtual public basic_window_api
 		ifd0.push_PhotometricInterpretation(lak::fixed_array(uint16_t(34892U)));
 		ifd0.push_Make(
 		  lak::astring_view((const char *)raw_image->camera.make.c_str()));
-		ifd0.push_Model(
-		  lak::astring_view((const char *)raw_image->camera.model.c_str()));
+		ifd0.push_Model(lak::astring_view(
+		  (const char *)(u8"RYE + "_str + raw_image->camera.model).c_str()));
 		ifd0.push_Orientation(lak::fixed_array((uint16_t(1U))));
 		ifd0.push_SamplesPerPixel(lak::fixed_array(uint16_t(3U)));
 
@@ -1425,8 +1425,8 @@ struct rye_window : virtual public basic_window_api
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
 		ifd0.push_DNGBackwardVersion(
 		  lak::fixed_array(uint8_t(1U), uint8_t(4U), uint8_t(1U), uint8_t(0U)));
-		ifd0.push_UniqueCameraModel(lak::string_view(
-		  lak::fmt<"{} {}">(raw_image->camera.make, raw_image->camera.model)));
+		ifd0.push_UniqueCameraModel(lak::string_view(lak::fmt<"RYE + {} {}">(
+		  raw_image->camera.make, raw_image->camera.model)));
 		ifd0.push_BlackLevel(lak::fixed_array(uint16_t(0)));
 		ifd0.push_WhiteLevel(lak::fixed_array(uint16_t(UINT16_MAX)));
 		ifd0.push_DefaultCropOrigin(lak::fixed_array(uint32_t(0U), uint32_t(0U)));
