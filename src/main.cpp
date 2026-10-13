@@ -1972,13 +1972,13 @@ struct rye_window : virtual public basic_window_api
 		}
 		else if (image_viewport_state)
 		{
-			if (run_compute)
-			{
-				lak::cobalt_append_compute_pass(window().handle(),
-				                                image_viewport_state->pass_node.get())
-				  .UNWRAP();
-				run_compute = false;
-			}
+			// if (run_compute)
+			// {
+			// 	lak::cobalt_append_compute_pass(window().handle(),
+			// 	                                image_viewport_state->pass_node.get())
+			// 	  .UNWRAP();
+			// 	run_compute = false;
+			// }
 
 			{
 				const auto content_size{ImGui::GetContentRegionAvail()};
@@ -2715,8 +2715,17 @@ struct rye_window : virtual public basic_window_api
 						              .template get<ImGui::ImplCoViewportDetails>();
 						DEFER(lak::EndViewport(image_viewport.get()));
 
-						if (vpd.passes->empty())
+						// if (vpd.passes->empty())
 						{
+							vpd.passes->clear();
+							vpd.owned_passes->clear();
+
+							if (run_compute)
+							{
+								vpd.passes->push_back(image_viewport_state->pass_node.get());
+								run_compute = false;
+							}
+
 							auto clear_pass = vpd.append_pass();
 							clear_pass->SetAttachmentClearData(
 							  cobalt::graphics::IFrameBuffer::AttachmentType::Color,
