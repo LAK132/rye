@@ -100,47 +100,56 @@ std::unordered_map<lak::astring, rye_ir_balance> ir_balance_db = {
    }},
   {"Canon EOS M50"_str,
    {
-     .ir_in      = {.930f, .730f, 1.f},
+     //  .ir_in      = {.930f, .730f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.395f, .35f, 1.0f},
    }},
   {"Canon EOS M6 Mark II"_str,
    {
-     .ir_in      = {1.07f, .9f, 1.f},
+     //  .ir_in      = {1.07f, .9f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.57f, .42f, 1.0f},
    }},
   {"Canon EOS R5"_str,
    {
-     .ir_in      = {1.01f, .95f, 1.f},
+     //  .ir_in      = {1.01f, .95f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.77f, .35f, .65f},
    }},
   {"Fujifilm X-T30"_str,
    {
-     .ir_in      = {1.018f, .978f, 1.f},
+     //  .ir_in      = {1.018f, .978f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.46f, .63f, 1.0f},
    }},
   {"Nikon D5200"_str,
    {
-     .ir_in      = {1.036f, .690f, 1.f},
+     //  .ir_in      = {1.036f, .690f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {1.f, .2f, .55f},
    }},
   {"Nikon Z fc"_str,
    {
-     .ir_in      = {1.07f, .83f, 1.f},
+     //  .ir_in      = {1.07f, .83f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.9f, .44f, 1.f},
    }},
   {"Sigma sd Quattro"_str,
    {
-     .ir_in      = {2.f, .373f, .146f},
+     //  .ir_in      = {2.f, .373f, .146f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {1.f, 1.f, 1.f},
    }},
   {"Sigma sd Quattro H"_str,
    {
-     .ir_in      = {1.79f, .335f, .25f},
+     //  .ir_in      = {1.79f, .335f, .25f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {1.f, 1.f, 1.f},
    }},
   {"Sony ILCE-7RM2"_str,
    {
-     .ir_in      = {1.030f, 1.073f, 1.f},
+     //  .ir_in      = {1.030f, 1.073f, 1.f},
+     .ir_in      = {1.f, 1.f, 1.f},
      .aero_match = {.85f, .5f, 1.0f},
    }},
 };
@@ -2165,39 +2174,40 @@ struct rye_window : virtual public basic_window_api
 
 					ImGui::Separator();
 
-					ImGui::Text("Raw RGB white point");
+					// currently unused
+					// ImGui::Text("Raw RGB white point");
 
-					if (!use_database_aero_match || !used_aero_match_from_db)
-					{
-						update_raw_white_balance |=
-						  ImGui::DragFloat("R##W",
-						                   &ir_balance.aero_match.r,
-						                   0.001f,
-						                   0.001f,
-						                   2.0f,
-						                   "IR/%.3f");
-						update_raw_white_balance |=
-						  ImGui::DragFloat("G##W",
-						                   &ir_balance.aero_match.g,
-						                   0.001f,
-						                   0.001f,
-						                   2.0f,
-						                   "R/%.3f");
-						update_raw_white_balance |=
-						  ImGui::DragFloat("B##W",
-						                   &ir_balance.aero_match.b,
-						                   0.001f,
-						                   0.001f,
-						                   2.0f,
-						                   "G/%.3f");
-					}
-					else
-					{
-						ImGui::Text("R: IR/%.3f\nG: R/%.3f\nB: G/%.3f",
-						            ir_balance.aero_match.r,
-						            ir_balance.aero_match.g,
-						            ir_balance.aero_match.b);
-					}
+					// if (!use_database_aero_match || !used_aero_match_from_db)
+					// {
+					// 	update_raw_white_balance |=
+					// 	  ImGui::DragFloat("R##W",
+					// 	                   &ir_balance.aero_match.r,
+					// 	                   0.001f,
+					// 	                   0.001f,
+					// 	                   2.0f,
+					// 	                   "IR/%.3f");
+					// 	update_raw_white_balance |=
+					// 	  ImGui::DragFloat("G##W",
+					// 	                   &ir_balance.aero_match.g,
+					// 	                   0.001f,
+					// 	                   0.001f,
+					// 	                   2.0f,
+					// 	                   "R/%.3f");
+					// 	update_raw_white_balance |=
+					// 	  ImGui::DragFloat("B##W",
+					// 	                   &ir_balance.aero_match.b,
+					// 	                   0.001f,
+					// 	                   0.001f,
+					// 	                   2.0f,
+					// 	                   "G/%.3f");
+					// }
+					// else
+					// {
+					// 	ImGui::Text("R: IR/%.3f\nG: R/%.3f\nB: G/%.3f",
+					// 	            ir_balance.aero_match.r,
+					// 	            ir_balance.aero_match.g,
+					// 	            ir_balance.aero_match.b);
+					// }
 
 					ImGui::Separator();
 				}
