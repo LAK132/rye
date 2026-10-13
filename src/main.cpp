@@ -497,6 +497,7 @@ struct rye_gpu_image_process_state
 	  bindings;
 
 	lak::cobalt::program_state<lak::type_pack<
+	  lak::cobalt::state_value_binding<cobalt::graphics::M4Float32, "view_proj">,
 	  lak::cobalt::state_value_binding<cobalt::graphics::V2UInt32, "image_size">,
 	  lak::cobalt::state_value_binding<cobalt::graphics::V4Float32, "image_uv">>>
 	  display_bindings;
@@ -595,7 +596,6 @@ struct rye_gpu_image_process_state
 		rye_gpu_image_process_state state;
 
 		state.pass_node = rd->CreateRenderPassNode();
-		state.pass_node->BindFrameBuffer(nullptr);
 
 		state.display_pass_node = rd->CreateRenderPassNode();
 
@@ -613,13 +613,14 @@ struct VSOutput
 };)"_str;
 
 		auto vs = vs_in + vs_out + R"(
+uniform row_major float4x4 view_proj;
 uniform float4 image_uv;
 
 VSOutput main(VSInput IN)
 {
 	VSOutput OUT;
 
-	OUT.position = float4(IN.position, 0.0f, 1.0f);
+	OUT.position = mul(float4(IN.position, 0.0f, 1.0f), view_proj);
 	OUT.texCoord = lerp(image_uv.xy, image_uv.zw, IN.texCoord);
 
 	return OUT;
@@ -635,7 +636,7 @@ float3 get_pixel(int2 pixel)
 	return display_image_buffer[pixel.x + (pixel.y * image_size.x)].xyz;
 }
 
-float3 sample_pixel(float2 uv) : SV_Target
+float3 sample_pixel_linear(float2 uv)
 {
 	float2 coord = (uv * float2(image_size)) - 0.5f;
 	int2 index = int2(floor(coord));
@@ -653,11 +654,16 @@ float3 sample_pixel(float2 uv) : SV_Target
 	return p;
 }
 
+float3 sample_pixel_nearest(float2 uv)
+{
+	return get_pixel(int2(floor(uv * float2(image_size))));
+}
+
 float4 main(VSOutput IN) : SV_Target
 {
 	float2 uv = IN.texCoord;
 	if ((uv.x < 0) | (uv.x > 1) | (uv.y < 0) | (uv.y > 1)) discard;
-	float3 p = sample_pixel(IN.texCoord);
+	float3 p = sample_pixel_nearest(IN.texCoord);
 	return float4(p, 1.0f);
 })"_str;
 
@@ -965,6 +971,19 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		  source_texture, state.sampler.get()));
 		BOUNDS_ASSERT(
 		  state.bindings.template set_state_value<"image_size">(image_size));
+		BOUNDS_ASSERT(state.display_bindings.template set_state_value<"view_proj">(
+		  lak::cobalt::from_lak(lak::mat4f_t{
+		    lak::vec4f_t{2.f, 0.f, 0.f, -1.f},
+		    lak::vec4f_t{0.f, -2.f, 0.f, 1.f} *
+		      // :HACK: Cobalt cannot correct OpenGL's coordinate system when the
+		      // framebuffer never leaves the GPU
+		      (cgx.api_family ==
+		           cobalt::graphics::IRendererPlugin::ApiFamily::OpenGL
+		         ? -1.f
+		         : 1.f),
+		    lak::vec4f_t{0.f, 0.f, 1.f, 0.f},
+		    lak::vec4f_t{0.f, 0.f, 0.f, 1.f},
+		  })));
 		BOUNDS_ASSERT(
 		  state.display_bindings.template set_state_value<"image_size">(
 		    image_size));
@@ -982,30 +1001,25 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 		state.display_bindings.state_group_node->SetDepthTestEnabled(true);
 		state.display_bindings.state_group_node->SetDepthWriteEnabled(true);
 
-		size_t vertex_count = 6;
-		lak::array<cobalt::graphics::V2Float32> positions({{-1.0f, -1.0f},
-		                                                   {-1.0f, 1.0f},
-		                                                   {1.0f, -1.0f},
-		                                                   {-1.0f, 1.0f},
-		                                                   {1.0f, -1.0f},
-		                                                   {1.0f, 1.0f}});
-		lak::array<cobalt::graphics::V2Float32> texCoords({{0.0f, 0.0f},
-		                                                   {0.0f, 1.0f},
-		                                                   {1.0f, 0.0f},
-		                                                   {0.0f, 1.0f},
-		                                                   {1.0f, 0.0f},
-		                                                   {1.0f, 1.0f}});
+		lak::array<cobalt::graphics::V2Float32> verts({
+		  {0.0f, 0.0f},
+		  {1.0f, 0.0f},
+		  {0.0f, 1.0f},
+		  {0.0f, 1.0f},
+		  {1.0f, 1.0f},
+		  {1.0f, 0.0f},
+		});
 
 		cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
 		  positions_attribute(
-		    vertex_count,
+		    verts.size(),
 		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
 		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
 		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
 		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadOften);
 		cobalt::graphics::VertexAttribute<cobalt::graphics::V2Float32>
 		  texCoords_attribute(
-		    vertex_count,
+		    verts.size(),
 		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
 		      cobalt::graphics::IVertexAttribute::PerformanceHint::ReadNever,
 		    cobalt::graphics::IVertexAttribute::PerformanceHint::WriteNever |
@@ -1024,14 +1038,12 @@ void main(uint3 thread_id : SV_DispatchThreadID)
 			return lak::err_t{u8"Failed to bind vertex texCoords attribute"_str};
 		}
 
-		if (!positions_attribute.SetInitialData(positions.data(),
-		                                        positions.size()))
+		if (!positions_attribute.SetInitialData(verts.data(), verts.size()))
 		{
 			ERROR("Failed to set initial positions data");
 			return lak::err_t{u8"Failed to set initial positions data"_str};
 		}
-		if (!texCoords_attribute.SetInitialData(texCoords.data(),
-		                                        texCoords.size()))
+		if (!texCoords_attribute.SetInitialData(verts.data(), verts.size()))
 		{
 			ERROR("Failed to set initial texCoords data");
 			return lak::err_t{u8"Failed to set initial texCoords data"_str};
@@ -1868,6 +1880,7 @@ struct rye_window : virtual public basic_window_api
 					// }
 
 					update_camera_colour_space();
+					update_scene_colour_space();
 					update_display_colour_space();
 					update_camera_white_balance();
 
@@ -2649,16 +2662,29 @@ struct rye_window : virtual public basic_window_api
 					ImGui::PushID("sRGB");
 					DEFER(ImGui::PopID());
 
+					ImGui::DragFloat("Zoom", &image_view_scale, 0.01f, 0.1f, 10.0f);
+					const auto size     = ImGui::GetContentRegionAvail();
+					const auto tex_size = lak::vec2f_t(lak::TextureSize(finaltex));
+
+					ImGui::SameLine();
+					if (ImGui::Button("Fit"))
+						image_view_scale =
+						  std::fmin(size.x / tex_size.x, size.y / tex_size.y);
+					ImGui::SameLine();
+					if (ImGui::Button("25%")) image_view_scale = 0.25f;
+					ImGui::SameLine();
+					if (ImGui::Button("100%")) image_view_scale = 1.f;
+					ImGui::SameLine();
+					if (ImGui::Button("250%")) image_view_scale = 2.5f;
+
 					if (!image_viewport) [[unlikely]]
 						image_viewport.emplace(lak::ImTextureColourFormat::RGB,
 						                       lak::ImTextureChannelFormat::U8);
 
 					const auto cursor = ImGui::GetCursorScreenPos();
-					const auto size   = ImGui::GetContentRegionAvail();
 					{
-						const auto tex_size = lak::vec2f_t(lak::TextureSize(finaltex));
-						auto viewport_rect  = ImVec4(
-              image_view_pos.x, image_view_pos.y, tex_size.x, tex_size.y);
+						auto viewport_rect = ImVec4(
+						  image_view_pos.x, image_view_pos.y, tex_size.x, tex_size.y);
 						ImVec4 quad_uv;
 						lak::PanZoomViewportBehaviour("##image_view",
 						                              viewport_rect,
