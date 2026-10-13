@@ -2772,17 +2772,14 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 {
 	if (!args.empty()) args = args.subspan(1U);
 
-	if (args.size() == 1U && args[0] == "--version"_str)
+	if (args.size() == 1U)
 	{
-		std::cout << APP_NAME << "\n";
-		return lak::err_t{EXIT_SUCCESS};
-	}
-
-	lak::debugger.std_out(u8"", u8"" APP_NAME "\n");
-
-	for (size_t arg = 0U; arg < args.size(); ++arg)
-	{
-		if (args[arg] == "-h"_str || args[arg] == "--help"_str)
+		if (args[0] == "--version"_str)
+		{
+			std::cout << APP_NAME << "\n";
+			return lak::err_t{EXIT_SUCCESS};
+		}
+		else if (args[0] == "--help"_str)
 		{
 #ifdef LAK_OS_WINDOWS
 			auto exestr = "rye.exe "_str;
@@ -2816,7 +2813,13 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 
 			return lak::err_t{EXIT_SUCCESS};
 		}
-		else if (args[arg] == "--onlyerr"_str)
+	}
+
+	lak::debugger.std_out(u8"", u8"" APP_NAME "\n");
+
+	for (size_t arg = 0U; arg < args.size(); ++arg)
+	{
+		if (args[arg] == "--onlyerr"_str)
 		{
 			force_only_error = true;
 		}
@@ -2843,15 +2846,15 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 		{
 			RES_TRY_ASSIGN(
 			  forced_cobalt_mode =,
-			  lak::cobalt_renderer_settings::preferred_vk
+			  lak::cobalt_renderer_settings::preferred_vk(
 			    lak::cobalt_renderer_settings::feature_set_t{
-			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders}()
-			      .map_err(
-			        [](lak::monostate) -> int
-			        {
-				        ERROR("Failed to get Vulkan renderer");
-				        return EXIT_FAILURE;
-			        }));
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+			    .map_err(
+			      [](lak::monostate) -> int
+			      {
+				      ERROR("Failed to get Vulkan renderer");
+				      return EXIT_FAILURE;
+			      }));
 		}
 		else
 #endif
