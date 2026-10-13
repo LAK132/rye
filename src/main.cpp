@@ -2757,11 +2757,13 @@ struct rye_window : virtual public basic_window_api
 	}
 };
 
+lak::optional<lak::cobalt_renderer_settings> forced_cobalt_mode;
+
 lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 {
 	if (!args.empty()) args = args.subspan(1U);
 
-	if (args.size() == 1U && args[0] == lak::astring("--version"))
+	if (args.size() == 1U && args[0] == "--version"_str)
 	{
 		std::cout << APP_NAME << "\n";
 		return lak::err_t{EXIT_SUCCESS};
@@ -2771,20 +2773,130 @@ lak::error_code<int> basic_program_preinit(lak::span<char *> args)
 
 	for (size_t arg = 0U; arg < args.size(); ++arg)
 	{
-		if (args[arg] == lak::astring("-h") || args[arg] == lak::astring("--help"))
+		if (args[arg] == "-h"_str || args[arg] == "--help"_str)
 		{
-			std::cout << "rye.exe "
-			             "[--help] "
+#ifdef LAK_OS_WINDOWS
+			auto exestr = "rye.exe "_str;
+#else
+			auto exestr = "rye "_str;
+#endif
+
+			std::cout << exestr << "--help\n";
+			std::cout << exestr << "--version\n";
+			lak::array<lak::astring> renderers;
+#ifdef LAK_ENABLE_COBALT_OGL4
+			renderers.push_back("--opengl"_str);
+#endif
+#ifdef LAK_ENABLE_COBALT_VK
+			renderers.push_back("--vulkan"_str);
+#endif
+#ifdef LAK_ENABLE_COBALT_D3D11
+			renderers.push_back("--d3d11"_str);
+#endif
+#ifdef LAK_ENABLE_COBALT_D3D12
+			renderers.push_back("--d3d12"_str);
+#endif
+#ifdef LAK_ENABLE_COBALT_MTL
+			renderers.push_back("--metal"_str);
+#endif
+			std::cout << exestr << "["
+			          << lak::join_strings<char>("|"_view, lak::span(renderers))
+			          << "] "
 			             "[--onlyerr] "
 			             "[<filepath>]\n";
 
 			return lak::err_t{EXIT_SUCCESS};
 		}
-		else if (args[arg] == lak::astring("--onlyerr"))
+		else if (args[arg] == "--onlyerr"_str)
 		{
 			force_only_error = true;
 		}
 		else
+#ifdef LAK_ENABLE_COBALT_OGL4
+		  if (args[arg] == "--opengl"_str)
+		{
+			RES_TRY_ASSIGN(
+			  forced_cobalt_mode =,
+			  lak::cobalt_renderer_settings::preferred_ogl4(
+			    lak::cobalt_renderer_settings::feature_set_t{
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+			    .map_err(
+			      [](lak::monostate) -> int
+			      {
+				      ERROR("Failed to get OpenGL4 renderer");
+				      return EXIT_FAILURE;
+			      }));
+		}
+		else
+#endif
+#ifdef LAK_ENABLE_COBALT_VK
+		  if (args[arg] == "--vulkan"_str)
+		{
+			RES_TRY_ASSIGN(
+			  forced_cobalt_mode =,
+			  lak::cobalt_renderer_settings::preferred_vk
+			    lak::cobalt_renderer_settings::feature_set_t{
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders}()
+			      .map_err(
+			        [](lak::monostate) -> int
+			        {
+				        ERROR("Failed to get Vulkan renderer");
+				        return EXIT_FAILURE;
+			        }));
+		}
+		else
+#endif
+#ifdef LAK_ENABLE_COBALT_D3D11
+		  if (args[arg] == "--d3d11"_str)
+		{
+			RES_TRY_ASSIGN(
+			  forced_cobalt_mode =,
+			  lak::cobalt_renderer_settings::preferred_d3d11(
+			    lak::cobalt_renderer_settings::feature_set_t{
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+			    .map_err(
+			      [](lak::monostate) -> int
+			      {
+				      ERROR("Failed to get Direct3D11 renderer");
+				      return EXIT_FAILURE;
+			      }));
+		}
+		else
+#endif
+#ifdef LAK_ENABLE_COBALT_D3D12
+		  if (args[arg] == "--d3d12"_str)
+		{
+			RES_TRY_ASSIGN(
+			  forced_cobalt_mode =,
+			  lak::cobalt_renderer_settings::preferred_d3d12(
+			    lak::cobalt_renderer_settings::feature_set_t{
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+			    .map_err(
+			      [](lak::monostate) -> int
+			      {
+				      ERROR("Failed to get Direct3D12 renderer");
+				      return EXIT_FAILURE;
+			      }));
+		}
+		else
+#endif
+#ifdef LAK_ENABLE_COBALT_MTL
+		  if (args[arg] == "--metal"_str)
+		{
+			RES_TRY_ASSIGN(
+			  forced_cobalt_mode =,
+			  lak::cobalt_renderer_settings::preferred_metal(
+			    lak::cobalt_renderer_settings::feature_set_t{
+			      cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+			    .map_err(
+			      [](lak::monostate) -> int
+			      {
+				      ERROR("Failed to get Metal renderer");
+				      return EXIT_FAILURE;
+			      }));
+		}
+		else
+#endif
 		{
 			if (lak::path_exists(args[arg]).UNWRAP())
 			{
@@ -2809,11 +2921,20 @@ lak::error_code<int> basic_program_init()
 	basic_window_cobalt_settings.colour_mode =
 	  cobalt::graphics::IFrameBuffer::WindowColorSpaceMode::Default;
 
-	rye_wnd = basic_create_window<rye_window>(
-	            basic_window_cobalt_settings,
-	            lak::cobalt_renderer_settings::feature_set_t{
-	              cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
-	            .UNWRAP();
+	if_let_some (const auto &settings, forced_cobalt_mode)
+	{
+		rye_wnd =
+		  basic_create_window<rye_window>(basic_window_cobalt_settings, settings)
+		    .UNWRAP();
+	}
+	else
+	{
+		rye_wnd = basic_create_window<rye_window>(
+		            basic_window_cobalt_settings,
+		            lak::cobalt_renderer_settings::feature_set_t{
+		              cobalt::graphics::IGraphicsDevice::Feature::ComputeShaders})
+		            .UNWRAP();
+	}
 
 	{
 		auto window = rye_wnd.get();
