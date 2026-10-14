@@ -2678,8 +2678,11 @@ struct rye_window : virtual public basic_window_api
 
 					ImGui::SameLine();
 					if (ImGui::Button("Fit"))
+					{
 						image_view_scale =
 						  std::fmin(size.x / tex_size.x, size.y / tex_size.y);
+						image_view_pos = ImVec2(0, 0);
+					}
 					ImGui::SameLine();
 					if (ImGui::Button("25%")) image_view_scale = 0.25f;
 					ImGui::SameLine();
