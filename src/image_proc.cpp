@@ -1,7 +1,6 @@
 #include "image_proc.hpp"
 
-rye_gpu_image_process_state::rye_gpu_image_process_state(
-  rye_gpu_image_process_state &&other)
+rye_image_proc_state::rye_image_proc_state(rye_image_proc_state &&other)
 : pass_node(lak::move(other.pass_node)),
   display_pass_node(lak::move(other.display_pass_node)),
   program(lak::move(other.program)),
@@ -17,8 +16,8 @@ rye_gpu_image_process_state::rye_gpu_image_process_state(
 {
 }
 
-rye_gpu_image_process_state &rye_gpu_image_process_state::operator=(
-  rye_gpu_image_process_state &&other)
+rye_image_proc_state &rye_image_proc_state::operator=(
+  rye_image_proc_state &&other)
 {
 	lak::swap(pass_node, other.pass_node);
 	lak::swap(display_pass_node, other.display_pass_node);
@@ -35,7 +34,7 @@ rye_gpu_image_process_state &rye_gpu_image_process_state::operator=(
 	return *this;
 }
 
-void rye_gpu_image_process_state::clear()
+void rye_image_proc_state::clear()
 {
 	if (pass_node)
 	{
@@ -82,14 +81,13 @@ void rye_gpu_image_process_state::clear()
 	vertex_buffer.reset();
 }
 
-lak::result<rye_gpu_image_process_state, lak::u8string>
-rye_gpu_image_process_state::make(
+lak::result<rye_image_proc_state, lak::u8string> rye_image_proc_state::make(
   lak::window &wnd, cobalt::graphics::ITextureBuffer2D *source_texture)
 {
 	const auto &cgx = lak::cobalt_graphics_context(wnd.handle()).UNWRAP();
 	auto *rd        = cgx.renderer.get();
 
-	rye_gpu_image_process_state state;
+	rye_image_proc_state state;
 
 	state.pass_node = rd->CreateRenderPassNode();
 

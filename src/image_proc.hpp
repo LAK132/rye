@@ -5,7 +5,7 @@
 #include <lak/system/cobalt/state.hpp>
 #include <lak/system/windowing/window.hpp>
 
-struct rye_gpu_image_process_state
+struct rye_image_proc_state
 {
 	cobalt::graphics::IRenderPassNode::unique_ptr pass_node;
 	cobalt::graphics::IRenderPassNode::unique_ptr display_pass_node;
@@ -71,17 +71,16 @@ struct rye_gpu_image_process_state
 	  lak::cobalt::state_value_binding<cobalt::graphics::V4Float32, "image_uv">>>
 	  display_bindings;
 
-	rye_gpu_image_process_state() = default;
-	rye_gpu_image_process_state(rye_gpu_image_process_state &&other);
-	rye_gpu_image_process_state &operator=(rye_gpu_image_process_state &&other);
-	rye_gpu_image_process_state(const rye_gpu_image_process_state &) = delete;
-	rye_gpu_image_process_state &operator=(const rye_gpu_image_process_state &) =
-	  delete;
+	rye_image_proc_state() = default;
+	rye_image_proc_state(rye_image_proc_state &&other);
+	rye_image_proc_state &operator=(rye_image_proc_state &&other);
+	rye_image_proc_state(const rye_image_proc_state &)            = delete;
+	rye_image_proc_state &operator=(const rye_image_proc_state &) = delete;
 
-	inline ~rye_gpu_image_process_state() { clear(); }
+	inline ~rye_image_proc_state() { clear(); }
 
 	void clear();
 
-	static lak::result<rye_gpu_image_process_state, lak::u8string> make(
+	static lak::result<rye_image_proc_state, lak::u8string> make(
 	  lak::window &wnd, cobalt::graphics::ITextureBuffer2D *source_texture);
 };

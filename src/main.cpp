@@ -924,7 +924,7 @@ struct rye_window : virtual public basic_window_api
 	float lrawsrgbtex_size = 1.f;
 
 	lak::ImUniqueViewport image_viewport;
-	lak::optional<rye_gpu_image_process_state> image_viewport_state;
+	lak::optional<rye_image_proc_state> image_viewport_state;
 
 	lak::mat3f_t XYZ_to_cam;
 	lak::mat3f_t cam_to_XYZ;
@@ -1179,7 +1179,7 @@ struct rye_window : virtual public basic_window_api
 					finaltex.emplace(raw_image->data);
 
 					image_viewport_state =
-					  rye_gpu_image_process_state::make(
+					  rye_image_proc_state::make(
 					    window(), ImGui::ImplGetCobaltTexture(finaltex.get().GetTexID()))
 					    .UNWRAP();
 
