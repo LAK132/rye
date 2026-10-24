@@ -1,6 +1,8 @@
 #ifndef RYE_IMAGE_DATA_HPP
 #define RYE_IMAGE_DATA_HPP
 
+#include "rye/rye.hpp"
+
 #include <lak/col/col.hpp>
 #include <lak/col/srgb.hpp>
 #include <lak/future.hpp>
@@ -8,7 +10,6 @@
 #include <lak/vec.hpp>
 
 #include "libraw_format.hpp"
-#include "rye.hpp"
 
 namespace rye
 {

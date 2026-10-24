@@ -1,5 +1,4 @@
 #include "image_data.hpp"
-#include "rye.hpp"
 
 #include <lak/bit_reader.hpp>
 #include <lak/col/cie.hpp>

@@ -1,7 +1,6 @@
 #include "image_data.hpp"
 
 #include "libraw_format.hpp"
-#include "rye.hpp"
 
 #include <lak/format.hpp>
 #include <lak/system/file.hpp>
