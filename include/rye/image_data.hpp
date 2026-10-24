@@ -9,8 +9,6 @@
 #include <lak/image.hpp>
 #include <lak/vec.hpp>
 
-#include "libraw_format.hpp"
-
 namespace rye
 {
 	struct image_data

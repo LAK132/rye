@@ -1,4 +1,4 @@
-#include "image_data.hpp"
+#include "rye/image_data.hpp"
 
 #include <lak/binary_reader.hpp>
 #include <lak/file/mdc.hpp>

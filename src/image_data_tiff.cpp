@@ -1,4 +1,4 @@
-#include "image_data.hpp"
+#include "rye/image_data.hpp"
 
 #include <lak/bit_reader.hpp>
 #include <lak/col/cie.hpp>
@@ -357,7 +357,7 @@ lak::result<rye::image_data, lak::u8string> rye::load_tiff(
 			{
 				case 6U: // YCbCr
 					[[fallthrough]];
-				case 1U: // RGB
+				case 2U: // RGB
 					for (size_t y = 0U; y < result.data.size().y; ++y)
 					{
 						for (size_t x = 0U; x < result.data.size().x; ++x)

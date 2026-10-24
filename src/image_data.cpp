@@ -1,4 +1,4 @@
-#include "image_data.hpp"
+#include "rye/image_data.hpp"
 
 #include <lak/string_literals/view.hpp>
 #include <lak/string_utils.hpp>
