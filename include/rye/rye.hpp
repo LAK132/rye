@@ -45,10 +45,6 @@ constexpr inline rye::image_flip_t operator|(rye::image_flip_t a,
 
 namespace rye
 {
-	void image_view(ImTextureRef texture, float *scale);
-
-	void image_view(ImTextureRef texture, const float scale);
-
 	inline auto desqueeze_sampler(const lak::image<lak::vec3f_t> &src,
 	                              lak::vec2s_t dst_size)
 	{
@@ -158,10 +154,6 @@ namespace rye
 	                            float lightness,
 	                            float contrast,
 	                            float saturation);
-
-	float to_srgb(float value);
-
-	lak::vec3f_t to_srgb(lak::vec3f_t colour);
 
 	inline auto relative_blackbody(float colour_temp)
 	{

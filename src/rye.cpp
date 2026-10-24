@@ -2,35 +2,6 @@
 
 #include <lak/tasks.hpp>
 
-void rye::image_view(ImTextureRef texture, float *scale)
-{
-	ImGui::DragFloat("Scale", scale, 0.01f, 0.1f, 10.0f);
-	ImGui::Separator();
-	rye::image_view(texture, *scale);
-}
-
-void rye::image_view(ImTextureRef texture, const float scale)
-{
-	ImGui::BeginChild("Image View",
-	                  ImVec2(0, 0),
-	                  false,
-	                  ImGuiWindowFlags_NoSavedSettings |
-	                    ImGuiWindowFlags_AlwaysVerticalScrollbar |
-	                    ImGuiWindowFlags_AlwaysHorizontalScrollbar);
-
-	if (texture.GetTexID() == ImTextureID_Invalid)
-	{
-		ImGui::Text("No image selected.");
-	}
-	else
-	{
-		auto sz = lak::TextureSize(texture);
-		ImGui::Image(texture, ImVec2(scale * (float)sz.x, scale * (float)sz.y));
-	}
-
-	ImGui::EndChild();
-}
-
 lak::vec3f_t rye::desqueeze_sample(const lak::image<lak::vec3f_t> &src,
                                    lak::vec2s_t dst_size,
                                    lak::vec2s_t dst_coord)
@@ -846,18 +817,4 @@ lak::vec3f_t rye::exp_correction(lak::vec3f_t colour,
 	S *= saturation;
 
 	return rye::hsl_to_rgb({H, S, L});
-}
-
-float rye::to_srgb(float value)
-{
-	if (value <= 0.0031308f)
-		return 12.92f * value;
-	else
-		return (1.055f * std::pow(value, 1.f / 2.4f)) - 0.055f;
-}
-
-lak::vec3f_t rye::to_srgb(lak::vec3f_t colour)
-{
-	return {
-	  rye::to_srgb(colour.r), rye::to_srgb(colour.g), rye::to_srgb(colour.b)};
 }
