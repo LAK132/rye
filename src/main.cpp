@@ -9,12 +9,13 @@
 #include <lak/system/cobalt/result.hpp>
 #include <lak/system/cobalt/state.hpp>
 
+#include "rye/rye.hpp"
+
 #include "main.hpp"
 
 #include "image_data.hpp"
 #include "image_proc.hpp"
 #include "libraw_format.hpp"
-#include "rye.hpp"
 
 #include <lak/format.hpp>
 #include <lak/future.hpp>
